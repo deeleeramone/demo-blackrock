@@ -1576,6 +1576,28 @@ def opt_asset_classes(
     ]
 
 
+@app.get("/options/holding_types")
+def opt_holding_types() -> list[dict]:
+    _KNOWN = {
+        "Equity", "Fixed Income", "Alternative", "Money Market",
+        "Commodity", "Real Estate", "Other",
+    }
+    df = _read_sql(
+        """SELECT holding_type, SUM(market_value_usd) AS mv
+           FROM holdings_lt_latest
+           WHERE holding_type IS NOT NULL AND holding_type != ''
+           GROUP BY holding_type
+           ORDER BY mv DESC""",
+        (),
+    )
+    rows = [
+        {"label": r["holding_type"], "value": r["holding_type"]}
+        for _, r in df.iterrows()
+        if r["holding_type"] in _KNOWN
+    ]
+    return rows
+
+
 @app.get("/options/sectors")
 def opt_sectors(
     portfolio: str | None = None,
@@ -1707,7 +1729,7 @@ def top_securities_by_asset_class(
         extra = ""
     df = _read_sql(
         f"""SELECT {id_expr} AS ticker,
-                  MAX(lt.leaf_holding_name) AS name,
+                  REPLACE(MAX(lt.leaf_holding_name), ' (fund-as-leaf)', '') AS name,
                   SUM(lt.market_value_usd) AS total_exposure_usd,
                   COUNT(DISTINCT lt.parent_portfolio_id) AS fund_count
            FROM holdings_lt_latest lt
@@ -1732,7 +1754,7 @@ def top_securities_by_sector(
     )
     df = _read_sql(
         f"""SELECT {id_expr} AS ticker,
-                  MAX(lt.leaf_holding_name) AS name,
+                  REPLACE(MAX(lt.leaf_holding_name), ' (fund-as-leaf)', '') AS name,
                   SUM(lt.market_value_usd) AS total_exposure_usd,
                   COUNT(DISTINCT lt.parent_portfolio_id) AS fund_count
            FROM holdings_lt_latest lt
@@ -1758,7 +1780,7 @@ def top_securities_by_country(
     )
     df = _read_sql(
         f"""SELECT {id_expr} AS ticker,
-                  MAX(lt.leaf_holding_name) AS name,
+                  REPLACE(MAX(lt.leaf_holding_name), ' (fund-as-leaf)', '') AS name,
                   SUM(lt.market_value_usd) AS total_exposure_usd,
                   COUNT(DISTINCT lt.parent_portfolio_id) AS fund_count
            FROM holdings_lt_latest lt

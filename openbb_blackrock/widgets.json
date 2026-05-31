@@ -2413,8 +2413,7 @@
                         "paramName": "asset_class",
                         "label": "Asset Class",
                         "type": "endpoint",
-                        "optionsEndpoint": "/options/asset_classes",
-                        "value": "Equity",
+                        "optionsEndpoint": "/options/holding_types",
                         "show": true
                     },
                     {
