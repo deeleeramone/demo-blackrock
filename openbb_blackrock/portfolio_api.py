@@ -185,9 +185,7 @@ def _frame_to_records(df: pd.DataFrame) -> list[dict]:
     return df.to_dict(orient="records")
 
 
-def _drop_empty_columns(
-    df: pd.DataFrame, *, keep: set[str] | None = None
-) -> pd.DataFrame:
+def _drop_empty_columns(df: pd.DataFrame, *, keep: set[str] | None = None) -> pd.DataFrame:
     keep = keep or set()
     cols: list[str] = []
     for c in df.columns:
@@ -227,9 +225,7 @@ def overview() -> Overview:
             (SELECT MAX(holdings_as_of_date) FROM funds)               AS holdings_as_of_max
         """
     )
-    portfolios = _read_sql("SELECT DISTINCT portfolio FROM funds ORDER BY portfolio")[
-        "portfolio"
-    ].tolist()
+    portfolios = _read_sql("SELECT DISTINCT portfolio FROM funds ORDER BY portfolio")["portfolio"].tolist()
     row = df.iloc[0]
     return Overview(
         portfolios=portfolios,
@@ -266,14 +262,8 @@ _FUND_AXES = {
 
 
 def _normalize_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    df["label"] = df["label"].apply(
-        lambda l: "Other" if l is None or _GARBAGE_LABEL_RE.match(str(l).strip()) else l
-    )
-    df = (
-        df.groupby("label", as_index=False)["market_value_usd"]
-        .sum()
-        .sort_values("market_value_usd", ascending=False)
-    )
+    df["label"] = df["label"].apply(lambda l: "Other" if l is None or _GARBAGE_LABEL_RE.match(str(l).strip()) else l)
+    df = df.groupby("label", as_index=False)["market_value_usd"].sum().sort_values("market_value_usd", ascending=False)
     total = float(df["market_value_usd"].sum())
     df["weight_pct"] = df["market_value_usd"] / total * 100 if total else 0
     return df
@@ -291,14 +281,10 @@ def _breakdown(
         where.append("portfolio = ?")
         params.append(portfolio)
     if fund_ticker:
-        where.append(
-            "parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)"
-        )
+        where.append("parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)")
         params.append(fund_ticker)
     if axis_col == "currency":
-        where.append(
-            "currency IS NOT NULL AND LENGTH(currency) = 3 AND currency GLOB '[A-Z][A-Z][A-Z]'"
-        )
+        where.append("currency IS NOT NULL AND LENGTH(currency) = 3 AND currency GLOB '[A-Z][A-Z][A-Z]'")
     df = _read_sql(
         f"""SELECT COALESCE({axis_col}, 'Unknown') AS label,
                    SUM(market_value_usd)           AS market_value_usd
@@ -447,9 +433,7 @@ def top_holdings(
 
     where_sql = " AND ".join(where)
     group_sql = ", ".join(group_cols)
-    join_on_tmpl = " AND ".join(
-        f"COALESCE(t.{g},'') = COALESCE(__A__.{g},'')" for g in group_cols
-    )
+    join_on_tmpl = " AND ".join(f"COALESCE(t.{g},'') = COALESCE(__A__.{g},'')" for g in group_cols)
 
     dom_ctes = []
     dom_joins = []
@@ -467,9 +451,7 @@ def top_holdings(
         dom_ctes.append(cte)
         alias = f"d_{col}"
         on_clause = join_on_tmpl.replace("__A__", alias)
-        dom_joins.append(
-            f"LEFT JOIN dom_{col} {alias} ON {on_clause} AND {alias}.rn = 1"
-        )
+        dom_joins.append(f"LEFT JOIN dom_{col} {alias} ON {on_clause} AND {alias}.rn = 1")
         dom_selects.append(f"{alias}.{col} AS {col}")
 
     sql = (
@@ -496,9 +478,7 @@ def top_holdings(
         )
         or 0.0
     )
-    df["weight_pct"] = (
-        df["market_value_usd"] / universe_total * 100 if universe_total else 0
-    )
+    df["weight_pct"] = df["market_value_usd"] / universe_total * 100 if universe_total else 0
     return {
         "rows": _frame_to_records(df),
         "universe_total_usd": float(universe_total),
@@ -537,12 +517,7 @@ def list_funds(
         where.append("total_aum_usd >= ?")
         params.append(min_aum_usd)
 
-    total = (
-        _scalar(
-            f"SELECT COUNT(*) FROM funds WHERE {' AND '.join(where)}", tuple(params)
-        )
-        or 0
-    )
+    total = _scalar(f"SELECT COUNT(*) FROM funds WHERE {' AND '.join(where)}", tuple(params)) or 0
     df = _read_sql(
         f"""SELECT portfolio_id, ticker, isin, name, portfolio,
                    asset_class, sub_asset_class, investment_style,
@@ -617,11 +592,7 @@ def fund_metrics(ident: str) -> list[dict]:
             for ad, mv in rows[1:]:
                 d = _date.fromisoformat(ad)
                 if abs((d - target).days) <= 60:
-                    if (
-                        best is None
-                        or abs((d - target).days)
-                        < abs(_date.fromisoformat(best[0]) - target).days
-                    ):
+                    if best is None or abs((d - target).days) < abs(_date.fromisoformat(best[0]) - target).days:
                         best = (ad, mv)
             cur_mv = float(rows[0][1] or 0)
             if best and best[1] and cur_mv:
@@ -707,9 +678,7 @@ def _ensure_snapshot_cached(
         return None
     if not page_url.startswith("http"):
         if "/us/individual" in page_url:
-            page_url = "https://www.ishares.com" + page_url.replace(
-                "/us/individual", "/us"
-            )
+            page_url = "https://www.ishares.com" + page_url.replace("/us/individual", "/us")
         else:
             page_url = "https://www.blackrock.com" + page_url
 
@@ -909,9 +878,7 @@ def _side_by_side_hbar_figure(
             "textfont": {"color": font_color, "size": 11},
             "constraintext": "none",
             "cliponaxis": False,
-            "hovertemplate": (
-                f"<b>%{{y}}</b><br>{name}: {value_prefix}%{{x:{value_fmt}}}{value_suffix}<extra></extra>"
-            ),
+            "hovertemplate": (f"<b>%{{y}}</b><br>{name}: {value_prefix}%{{x:{value_fmt}}}{value_suffix}<extra></extra>"),
             "showlegend": False,
         }
 
@@ -1006,7 +973,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
     cols = (
         "holding_ticker, holding_name, holding_isin, holding_cusip, "
         "holding_sedol, holding_type, sector, country, exchange, "
-        "currency, market_value_usd, weight_pct, price, "
+        "currency, fx_rate, market_value_usd, weight_pct, price, "
         "coupon_pct, maturity_date, duration, "
         "ytm_pct, yield_to_call_pct, yield_to_worst_pct, mod_duration, "
         "as_of_date"
@@ -1019,9 +986,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
             "ORDER BY market_value_usd DESC",
             (pid, pid),
         )
-        df = _drop_empty_columns(
-            df, keep={"holding_name", "market_value_usd", "weight_pct"}
-        )
+        df = _drop_empty_columns(df, keep={"holding_name", "market_value_usd", "weight_pct"})
         return {
             "fund": dict(fund),
             "total": int(df.shape[0]),
@@ -1059,9 +1024,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
             "ORDER BY market_value_usd DESC",
             (pid, served.isoformat()),
         )
-        df = _drop_empty_columns(
-            df, keep={"holding_name", "market_value_usd", "weight_pct"}
-        )
+        df = _drop_empty_columns(df, keep={"holding_name", "market_value_usd", "weight_pct"})
         return {
             "fund": dict(fund),
             "requested_date": requested.isoformat(),
@@ -1097,9 +1060,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
         return {
             "fund": dict(fund),
             "requested_date": requested.isoformat(),
-            "error": (
-                f"historical holdings unavailable: portfolio '{fund.get('portfolio')}' not yet supported"
-            ),
+            "error": (f"historical holdings unavailable: portfolio '{fund.get('portfolio')}' not yet supported"),
             "rows": [],
         }
 
@@ -1116,9 +1077,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
     page_url = fund.get("product_page_url") or ""
     if page_url and not page_url.startswith("http"):
         if "/us/individual" in page_url:
-            page_url = "https://www.ishares.com" + page_url.replace(
-                "/us/individual", "/us"
-            )
+            page_url = "https://www.ishares.com" + page_url.replace("/us/individual", "/us")
         else:
             page_url = "https://www.blackrock.com" + page_url
     if not page_url:
@@ -1156,9 +1115,7 @@ def fund_holdings(ident: str, as_of_date: str | None = None) -> dict:
         return {
             "fund": dict(fund),
             "requested_date": requested.isoformat(),
-            "error": (
-                f"no holdings available within 5 business days of {requested.isoformat()}"
-            ),
+            "error": (f"no holdings available within 5 business days of {requested.isoformat()}"),
             "rows": [],
         }
     holdings, served = result
@@ -1181,9 +1138,7 @@ _COMPARE_AXES = {
 }
 
 
-def _holdings_at_date(
-    pid: str, as_of_date: str, axis_col: str | None = None
-) -> pd.DataFrame:
+def _holdings_at_date(pid: str, as_of_date: str, axis_col: str | None = None) -> pd.DataFrame:
     """Aggregate one snapshot's holdings by axis (or per-row if axis None).
 
     Returns DataFrame with columns ``label, market_value_usd, weight_pct``
@@ -1201,11 +1156,7 @@ def _holdings_at_date(
                 ORDER BY market_value_usd DESC""",
             (pid, as_of_date),
         )
-        df["label"] = df["label"].apply(
-            lambda l: (
-                "Other" if l is None or _GARBAGE_LABEL_RE.match(str(l).strip()) else l
-            )
-        )
+        df["label"] = df["label"].apply(lambda l: "Other" if l is None or _GARBAGE_LABEL_RE.match(str(l).strip()) else l)
         df = (
             df.groupby("label", as_index=False)
             .agg({"market_value_usd": "sum", "weight_pct": "sum"})
@@ -1273,11 +1224,7 @@ def fund_top10_compare(
             return [], []
         cats = []
         for tk, name in zip(df["holding_ticker"].tolist(), df["holding_name"].tolist()):
-            tk_clean = (
-                str(tk).strip().upper()
-                if tk and str(tk).strip() not in ("-", "")
-                else None
-            )
+            tk_clean = str(tk).strip().upper() if tk and str(tk).strip() not in ("-", "") else None
             cats.append(tk_clean or (str(name)[:18] if name else "?"))
         vals = [float(v or 0) for v in df[metric].tolist()]
         return cats, vals
@@ -1444,9 +1391,7 @@ def fund_lookthrough(
     )
     if (df["path_depth"] == 0).all():
         df = df.drop(columns=["path_depth"])
-    df = _drop_empty_columns(
-        df, keep={"leaf_holding_name", "market_value_usd", "weight_pct"}
-    )
+    df = _drop_empty_columns(df, keep={"leaf_holding_name", "market_value_usd", "weight_pct"})
     return {
         "fund": dict(fund),
         "rows": _frame_to_records(df),
@@ -1504,9 +1449,7 @@ def fund_breakdown_compare_qs(
     raw: bool = Query(False),
     theme: str = Query("light"),
 ) -> Any:
-    return fund_breakdown_compare(
-        ticker, axis=axis, top=top, metric=metric, raw=raw, theme=theme
-    )
+    return fund_breakdown_compare(ticker, axis=axis, top=top, metric=metric, raw=raw, theme=theme)
 
 
 @app.get("/fund_lookthrough")
@@ -1551,9 +1494,7 @@ def fund_distributions_qs(
 @app.get("/options/portfolios")
 def opt_portfolios() -> list[dict]:
     df = _read_sql("SELECT DISTINCT portfolio FROM funds ORDER BY portfolio")
-    return [{"label": "All Portfolios", "value": ""}] + [
-        {"label": p, "value": p} for p in df["portfolio"].tolist()
-    ]
+    return [{"label": "All Portfolios", "value": ""}] + [{"label": p, "value": p} for p in df["portfolio"].tolist()]
 
 
 @app.get("/options/investment_styles")
@@ -1586,9 +1527,7 @@ def _fund_distinct(col: str, portfolio: str | None, all_label: str) -> list[dict
         f"SELECT DISTINCT {col} FROM funds WHERE {' AND '.join(where)} ORDER BY {col}",
         tuple(args),
     )
-    return [{"label": all_label, "value": ""}] + [
-        {"label": v, "value": v} for v in df[col].tolist()
-    ]
+    return [{"label": all_label, "value": ""}] + [{"label": v, "value": v} for v in df[col].tolist()]
 
 
 @app.get("/options/fund_asset_classes")
@@ -1656,9 +1595,7 @@ def opt_sectors(
         where.append("country = ?")
         params.append(country)
     if ticker:
-        where.append(
-            "parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)"
-        )
+        where.append("parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)")
         params.append(ticker)
     df = _read_sql(
         f"""SELECT sector, SUM(market_value_usd) AS mv
@@ -1667,9 +1604,7 @@ def opt_sectors(
             GROUP BY sector ORDER BY mv DESC""",
         tuple(params),
     )
-    return [{"label": "All Sectors", "value": ""}] + [
-        {"label": s, "value": s} for s in df["sector"].tolist()
-    ]
+    return [{"label": "All Sectors", "value": ""}] + [{"label": s, "value": s} for s in df["sector"].tolist()]
 
 
 @app.get("/options/countries")
@@ -1691,9 +1626,7 @@ def opt_countries(
         where.append("sector = ?")
         params.append(sector)
     if ticker:
-        where.append(
-            "parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)"
-        )
+        where.append("parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)")
         params.append(ticker)
     df = _read_sql(
         f"""SELECT country, SUM(market_value_usd) AS mv
@@ -1702,9 +1635,7 @@ def opt_countries(
             GROUP BY country ORDER BY mv DESC""",
         tuple(params),
     )
-    return [{"label": "All Countries", "value": ""}] + [
-        {"label": c, "value": c} for c in df["country"].tolist()
-    ]
+    return [{"label": "All Countries", "value": ""}] + [{"label": c, "value": c} for c in df["country"].tolist()]
 
 
 @app.get("/options/funds")
@@ -1733,9 +1664,7 @@ def opt_funds(
             "value": r["ticker"],
             "extraInfo": {
                 "description": r["name"],
-                "rightOfDescription": (
-                    f"${r['total_aum_usd'] / 1e9:.1f}B" if r["total_aum_usd"] else ""
-                ),
+                "rightOfDescription": (f"${r['total_aum_usd'] / 1e9:.1f}B" if r["total_aum_usd"] else ""),
             },
         }
         for _, r in df.iterrows()
@@ -1756,10 +1685,7 @@ def opt_holdings(limit: int = Query(500, ge=1, le=2000)) -> list[dict]:
            LIMIT ?""",
         (limit,),
     )
-    return [
-        {"label": f"{r['ticker']} — {r['name']}", "value": r["ticker"]}
-        for _, r in df.iterrows()
-    ]
+    return [{"label": f"{r['ticker']} — {r['name']}", "value": r["ticker"]} for _, r in df.iterrows()]
 
 
 @app.get("/holding_funds")
@@ -1775,9 +1701,7 @@ def top_securities_by_asset_class(
 ) -> dict:
     if asset_class == "Equity":
         id_expr = "COALESCE(NULLIF(lt.leaf_holding_ticker,''), lt.leaf_holding_isin, lt.leaf_holding_cusip, lt.leaf_holding_name)"
-        extra = (
-            "AND lt.leaf_holding_ticker IS NOT NULL AND lt.leaf_holding_ticker != ''"
-        )
+        extra = "AND lt.leaf_holding_ticker IS NOT NULL AND lt.leaf_holding_ticker != ''"
     else:
         id_expr = "COALESCE(NULLIF(lt.leaf_holding_isin,''), NULLIF(lt.leaf_holding_cusip,''), lt.leaf_holding_name)"
         extra = ""
@@ -1870,9 +1794,7 @@ _PALETTE = [
 _GARBAGE_LABEL_RE = re.compile(r"^[\d.,\-\s]+$")
 
 
-def _clean_pie_rows(
-    rows: list[dict], *, min_pct: float = 0.5, max_slices: int = 12
-) -> list[dict]:
+def _clean_pie_rows(rows: list[dict], *, min_pct: float = 0.5, max_slices: int = 12) -> list[dict]:
     cleaned: list[dict] = []
     for r in rows:
         label = r.get("label") or "Unknown"
@@ -2121,9 +2043,7 @@ def chart_top_holdings_bar(
         where.append("country = ?")
         params.append(country)
     if fund_ticker:
-        where.append(
-            "parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)"
-        )
+        where.append("parent_portfolio_id = (SELECT portfolio_id FROM funds WHERE ticker = ?)")
         params.append(fund_ticker)
     df = _read_sql(
         f"""SELECT leaf_holding_name, leaf_holding_ticker,
@@ -2143,11 +2063,7 @@ def chart_top_holdings_bar(
         for _, r in df.iterrows()
     ]
     vals = df["market_value_usd"].tolist()
-    title = (
-        f"Top {limit} Holdings"
-        + (f" — {fund_ticker}" if fund_ticker else "")
-        + (f" — {sector}" if sector else "")
-    )
+    title = f"Top {limit} Holdings" + (f" — {fund_ticker}" if fund_ticker else "") + (f" — {sector}" if sector else "")
     return _hbar_figure(labels, vals, title=title, theme=theme)
 
 
@@ -2163,14 +2079,9 @@ def chart_top_funds_bar(
     rows = res["rows"]
     if raw:
         return rows
-    labels = [
-        f"{r['ticker']} — {r['name'][:35]}" if r["ticker"] else r["name"][:50]
-        for r in rows
-    ]
+    labels = [f"{r['ticker']} — {r['name'][:35]}" if r["ticker"] else r["name"][:50] for r in rows]
     vals = [r["external_aum_usd"] or 0 for r in rows]
-    return _hbar_figure(
-        labels, vals, title=f"Top {limit} Funds by Net Assets", theme=theme
-    )
+    return _hbar_figure(labels, vals, title=f"Top {limit} Funds by Net Assets", theme=theme)
 
 
 _RETURN_PERIODS = {
@@ -2221,10 +2132,7 @@ def returns_total(portfolio: str | None = None) -> dict:
         "total_aum_usd": float(row.get("total_aum_usd") or 0),
         "fund_count": int(row.get("fund_count") or 0),
         "returns_pct": {k: row.get(col) for k, col in _RETURN_PERIODS.items()},
-        "coverage_aum_usd": {
-            k: float(row.get(f"coverage_{col}") or 0)
-            for k, col in _RETURN_PERIODS.items()
-        },
+        "coverage_aum_usd": {k: float(row.get(f"coverage_{col}") or 0) for k, col in _RETURN_PERIODS.items()},
     }
 
 
@@ -2244,9 +2152,7 @@ def returns_summary(portfolio: str | None = None) -> dict:
             "period": label,
             "return_pct": rt["returns_pct"].get(key),
             "coverage_pct": (
-                rt["coverage_aum_usd"].get(key, 0) / rt["total_aum_usd"] * 100
-                if rt["total_aum_usd"]
-                else None
+                rt["coverage_aum_usd"].get(key, 0) / rt["total_aum_usd"] * 100 if rt["total_aum_usd"] else None
             ),
         }
         for key, label in label_map
@@ -2388,9 +2294,7 @@ def chart_returns_attribution(
     rows = res["rows"]
     if raw:
         return res
-    pairs = sorted(
-        [(r["label"], r["contribution_pct"]) for r in rows], key=lambda p: p[1]
-    )
+    pairs = sorted([(r["label"], r["contribution_pct"]) for r in rows], key=lambda p: p[1])
     labels = [p[0] for p in pairs]
     contribs = [p[1] for p in pairs]
     colors = ["#0e7c66" if v >= 0 else "#c0392b" for v in contribs]
@@ -2460,9 +2364,7 @@ def income_total(portfolio: str | None = None) -> dict:
         parts.append(
             f"SUM(CASE WHEN {col} IS NOT NULL THEN external_aum_usd * {col} / 100 ELSE 0 END) AS annual_income_{col}"
         )
-        parts.append(
-            f"SUM(CASE WHEN {col} IS NOT NULL THEN external_aum_usd ELSE 0 END) AS coverage_{col}"
-        )
+        parts.append(f"SUM(CASE WHEN {col} IS NOT NULL THEN external_aum_usd ELSE 0 END) AS coverage_{col}")
     df = _read_sql(
         f"""SELECT SUM(external_aum_usd) AS total_aum_usd,
                    COUNT(*)              AS fund_count,
@@ -2546,18 +2448,14 @@ def income_attribution(
     total_aum = float(df["aum_usd"].sum())
     total_income = float(df["annual_income_usd"].sum())
     df["weight_pct"] = df["aum_usd"] / total_aum * 100 if total_aum else 0
-    df["income_share_pct"] = (
-        df["annual_income_usd"] / total_income * 100 if total_income else 0
-    )
+    df["income_share_pct"] = df["annual_income_usd"] / total_income * 100 if total_income else 0
     df = df.head(limit)
     return {
         "dim": dim,
         "yield_basis": yield_basis,
         "total_aum_usd": total_aum,
         "total_annual_income_usd": total_income,
-        "portfolio_weighted_yield_pct": (
-            (total_income / total_aum * 100) if total_aum else None
-        ),
+        "portfolio_weighted_yield_pct": ((total_income / total_aum * 100) if total_aum else None),
         "rows": _frame_to_records(df),
     }
 
@@ -2742,9 +2640,7 @@ def distributions_attribution(
     total_aum = float(df["aum_usd"].sum())
     total_dist = float(df["distributions_usd"].sum())
     df["weight_pct"] = df["aum_usd"] / total_aum * 100 if total_aum else 0
-    df["distribution_share_pct"] = (
-        df["distributions_usd"] / total_dist * 100 if total_dist else 0
-    )
+    df["distribution_share_pct"] = df["distributions_usd"] / total_dist * 100 if total_dist else 0
     df["realized_yield_pct"] = (df["distributions_usd"] / df["aum_usd"] * 100).fillna(0)
     df = df.head(limit)
     return {
@@ -2854,28 +2750,16 @@ def _correlation_frame(
             404,
             "no NAV history rows yet — run `python -m openbb_blackrock.ingest --nav-history` first",
         )
-    pivot = nav_df.pivot(
-        index="as_of_date", columns="portfolio_id", values="daily_return_pct"
-    )
+    pivot = nav_df.pivot(index="as_of_date", columns="portfolio_id", values="daily_return_pct")
     min_valid = max(10, int(len(pivot) * 0.60))
     pivot = pivot.dropna(thresh=min_valid, axis=1)
     pid_to_label = {
         r["portfolio_id"]: (r["ticker"] or r["name"])
-        + (
-            f" [{r['investment_style']}]"
-            if investment_styles and r["investment_style"]
-            else ""
-        )
+        + (f" [{r['investment_style']}]" if investment_styles and r["investment_style"] else "")
         for _, r in funds_df.iterrows()
     }
-    pid_to_weight = {
-        r["portfolio_id"]: float(r[weight_col]) for _, r in funds_df.iterrows()
-    }
-    keep_pids = [
-        pid
-        for pid in funds_df["portfolio_id"].tolist()
-        if pid in pivot.columns and pid in pid_to_label
-    ]
+    pid_to_weight = {r["portfolio_id"]: float(r[weight_col]) for _, r in funds_df.iterrows()}
+    keep_pids = [pid for pid in funds_df["portfolio_id"].tolist() if pid in pivot.columns and pid in pid_to_label]
     pivot = pivot[keep_pids]
     labels = [pid_to_label[pid] for pid in keep_pids]
     pivot.columns = labels
@@ -2950,11 +2834,7 @@ def _lower_triangle_heatmap(
                 z_row.append(None)
                 t_row.append("")
                 continue
-            v = (
-                matrix[i][j]
-                if matrix and i < len(matrix) and j < len(matrix[i])
-                else None
-            )
+            v = matrix[i][j] if matrix and i < len(matrix) and j < len(matrix[i]) else None
             z_row.append(v)
             t_row.append(f"{v:.{decimals}f}" if isinstance(v, (int, float)) else "")
         z.append(z_row)
@@ -3060,11 +2940,7 @@ def chart_correlation_heatmap(
             for j, fb in enumerate(labels):
                 if j > i:
                     continue
-                v = (
-                    matrix[i][j]
-                    if matrix and i < len(matrix) and j < len(matrix[i])
-                    else None
-                )
+                v = matrix[i][j] if matrix and i < len(matrix) and j < len(matrix[i]) else None
                 rows.append(
                     {
                         "period": res["period"],
@@ -3075,11 +2951,7 @@ def chart_correlation_heatmap(
                     }
                 )
         return rows
-    bits = [
-        v
-        for v in (investment_style, asset_class, sub_asset_class, country, sector)
-        if v and isinstance(v, str)
-    ]
+    bits = [v for v in (investment_style, asset_class, sub_asset_class, country, sector) if v and isinstance(v, str)]
     suffix = (" — " + " · ".join(bits)) if bits else ""
     return _lower_triangle_heatmap(
         res["matrix"],
@@ -3172,12 +3044,8 @@ def holding_detail(ident: str) -> dict:
             h.get("holding_name"),
         ),
     )
-    universe_total = (
-        _scalar("SELECT SUM(market_value_usd) FROM holdings_lookthrough") or 0
-    )
-    portfolio_weight_pct = (
-        h["total_exposure_usd"] / universe_total * 100 if universe_total else None
-    )
+    universe_total = _scalar("SELECT SUM(market_value_usd) FROM holdings_lookthrough") or 0
+    portfolio_weight_pct = h["total_exposure_usd"] / universe_total * 100 if universe_total else None
     return {
         "holding": h,
         "portfolio_weight_pct": portfolio_weight_pct,
@@ -3206,18 +3074,13 @@ def metrics_holding(ticker: str = Query(...)) -> list[dict]:
 
     return [
         {
-            "label": h.get("holding_ticker")
-            or h.get("holding_isin")
-            or h.get("holding_name")
-            or ticker,
+            "label": h.get("holding_ticker") or h.get("holding_isin") or h.get("holding_name") or ticker,
             "value": fmt_usd(exp),
             "delta": "",
         },
         {
             "label": "Brand Weight",
-            "value": f"{res['portfolio_weight_pct']:.3f}%"
-            if res.get("portfolio_weight_pct") is not None
-            else "—",
+            "value": f"{res['portfolio_weight_pct']:.3f}%" if res.get("portfolio_weight_pct") is not None else "—",
             "delta": "",
         },
         {"label": "Funds Holding", "value": str(len(res["funds"])), "delta": ""},
@@ -3397,10 +3260,7 @@ def doc_options(
         "SELECT slug, label FROM fund_documents WHERE ticker = ? ORDER BY label",
         (tk,),
     )
-    return [
-        {"label": f"{tk} - {r['label']}", "value": f"US|{tk}|{r['slug']}"}
-        for _, r in df.iterrows()
-    ]
+    return [{"label": f"{tk} - {r['label']}", "value": f"US|{tk}|{r['slug']}"} for _, r in df.iterrows()]
 
 
 @app.post("/blackrock/view_documents")

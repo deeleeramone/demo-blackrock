@@ -1511,8 +1511,16 @@
                                 "align": "center"
                             },
                             {
+                                "field": "fx_rate",
+                                "headerName": "FX Rate (USD)",
+                                "cellDataType": "number",
+                                "decimalPlaces": 4,
+                                "align": "right",
+                                "width": 110
+                            },
+                            {
                                 "field": "market_value_usd",
-                                "headerName": "Market Value",
+                                "headerName": "Market Value (USD)",
                                 "cellDataType": "number",
                                 "formatterFn": "int",
                                 "prefix": "$",
