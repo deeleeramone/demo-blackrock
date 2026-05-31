@@ -1,0 +1,887 @@
+[
+    {
+        "name": "BlackRock Portfolio",
+        "img": "https://www.nasdaq.com/sites/acquia.prod/files/2021/11/02/ishaes.jpg",
+        "img_dark": "https://www.nasdaq.com/sites/acquia.prod/files/2021/11/02/ishaes.jpg",
+        "img_light": "https://www.nasdaq.com/sites/acquia.prod/files/2021/11/02/ishaes.jpg",
+        "description": "BlackRock U.S. iShares brand, viewed as a portfolio of funds.",
+        "allowCustomization": true,
+        "tabs": {
+            "total": {
+                "id": "total",
+                "name": "TOTAL",
+                "layout": [
+                    {
+                        "i": "blk_total_portfolio_metrics",
+                        "x": 0,
+                        "y": 2,
+                        "w": 40,
+                        "h": 4,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_total_returns_metrics",
+                        "x": 0,
+                        "y": 6,
+                        "w": 40,
+                        "h": 4,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_asset_class",
+                        "x": 29,
+                        "y": 19,
+                        "w": 11,
+                        "h": 12,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "pie",
+                                "chartOptions": {
+                                    "pie": {
+                                        "legend": {
+                                            "enabled": false
+                                        }
+                                    }
+                                },
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "pie"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_strategy",
+                        "x": 0,
+                        "y": 10,
+                        "w": 15,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "pie",
+                                "chartOptions": {
+                                    "pie": {
+                                        "legend": {
+                                            "enabled": false
+                                        }
+                                    }
+                                },
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "market_value_usd"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "pie"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_region",
+                        "x": 15,
+                        "y": 10,
+                        "w": 14,
+                        "h": 9,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "heatmap",
+                                "chartOptions": {},
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "heatmap"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_country",
+                        "x": 15,
+                        "y": 19,
+                        "w": 14,
+                        "h": 12,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "treemap",
+                                "chartOptions": {},
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "treemap"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_market_type",
+                        "x": 29,
+                        "y": 10,
+                        "w": 11,
+                        "h": 9,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "pie",
+                                "chartOptions": {
+                                    "pie": {
+                                        "legend": {
+                                            "enabled": false
+                                        }
+                                    }
+                                },
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "pie"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_currency",
+                        "x": 0,
+                        "y": 28,
+                        "w": 15,
+                        "h": 17,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "pie",
+                                "chartOptions": {
+                                    "pie": {
+                                        "legend": {
+                                            "enabled": false
+                                        }
+                                    }
+                                },
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "pie"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_alloc_sector",
+                        "x": 15,
+                        "y": 31,
+                        "w": 25,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartModel": {
+                                "modelType": "range",
+                                "chartType": "treemap",
+                                "chartOptions": {},
+                                "cellRange": {
+                                    "columns": [
+                                        "label",
+                                        "market_value_usd",
+                                        "weight_pct"
+                                    ]
+                                },
+                                "suppressChartRanges": true
+                            },
+                            "chartView": {
+                                "enabled": true,
+                                "chartType": "treemap"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "label"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "label",
+                                            "market_value_usd",
+                                            "weight_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_total_top_performers",
+                        "x": 0,
+                        "y": 45,
+                        "w": 20,
+                        "h": 12,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "limit": "10"
+                            },
+                            "chartView": {
+                                "enabled": false,
+                                "chartType": "line"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "ticker"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "rank",
+                                            "ticker",
+                                            "name",
+                                            "asset_class",
+                                            "aum_usd",
+                                            "return_1y_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)",
+                            "Group 4"
+                        ]
+                    },
+                    {
+                        "i": "blk_total_bottom_performers",
+                        "x": 20,
+                        "y": 45,
+                        "w": 20,
+                        "h": 12,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares"
+                            },
+                            "chartView": {
+                                "enabled": false,
+                                "chartType": "line"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "ticker"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "rank",
+                                            "ticker",
+                                            "name",
+                                            "asset_class",
+                                            "aum_usd",
+                                            "return_1y_pct"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Portfolio (TOTAL tab)",
+                            "Group 4"
+                        ]
+                    }
+                ]
+            },
+            "by_fund": {
+                "id": "by_fund",
+                "name": "BY FUND",
+                "layout": [
+                    {
+                        "i": "blk_drill_fund_metrics",
+                        "x": 0,
+                        "y": 2,
+                        "w": 40,
+                        "h": 5,
+                        "state": {
+                            "params": {
+                                "ticker": "IEFA",
+                                "portfolio": "iShares"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_byfund_asset_class",
+                        "x": 0,
+                        "y": 7,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_byfund_sector",
+                        "x": 0,
+                        "y": 21,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_byfund_country",
+                        "x": 0,
+                        "y": 35,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_drill_fund_holdings_table",
+                        "x": 0,
+                        "y": 81,
+                        "w": 40,
+                        "h": 16,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            },
+                            "chartView": {
+                                "enabled": false,
+                                "chartType": "line"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "holding_ticker"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "holding_name",
+                                            "holding_type",
+                                            "sector",
+                                            "holding_ticker",
+                                            "country",
+                                            "exchange",
+                                            "currency",
+                                            "price",
+                                            "market_value_usd",
+                                            "weight_pct",
+                                            "as_of_date"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_drill_fund_distributions",
+                        "x": 0,
+                        "y": 97,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "ticker": "IEFA",
+                                "portfolio": "iShares"
+                            },
+                            "chartView": {
+                                "enabled": false,
+                                "chartType": "line"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "ex_date"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "ex_date",
+                                            "record_date",
+                                            "payable_date",
+                                            "total_distribution",
+                                            "income",
+                                            "st_cap_gains",
+                                            "lt_cap_gains",
+                                            "return_of_capital"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_drill_fund_nav_history",
+                        "x": 0,
+                        "y": 67,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "ticker": "IEFA",
+                                "portfolio": "iShares"
+                            },
+                            "chartView": {
+                                "enabled": false,
+                                "chartType": "line"
+                            },
+                            "columnState": {
+                                "default": {
+                                    "columnPinning": {
+                                        "leftColIds": [
+                                            "as_of_date"
+                                        ],
+                                        "rightColIds": []
+                                    },
+                                    "columnOrder": {
+                                        "orderedColIds": [
+                                            "as_of_date",
+                                            "nav_per_share",
+                                            "daily_return_pct",
+                                            "ex_dividends",
+                                            "shares_outstanding"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_drill_fund_documents",
+                        "x": 0,
+                        "y": 111,
+                        "w": 40,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA",
+                                "doc_name": [
+                                    "US|IEFA|annual-financial-statements"
+                                ]
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_byfund_top10_compare",
+                        "x": 0,
+                        "y": 49,
+                        "w": 40,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    }
+                ]
+            },
+            "correlation": {
+                "id": "correlation",
+                "name": "FUND CORRELATION",
+                "layout": [
+                    {
+                        "i": "blk_correlation_heatmap",
+                        "x": 0,
+                        "y": 2,
+                        "w": 40,
+                        "h": 30,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "investment_style": [
+                                    ""
+                                ],
+                                "asset_class": [
+                                    ""
+                                ],
+                                "sub_asset_class": [
+                                    ""
+                                ],
+                                "country": [
+                                    ""
+                                ],
+                                "sector": [
+                                    ""
+                                ]
+                            }
+                        },
+                        "groups": []
+                    }
+                ]
+            },
+            "by_holding": {
+                "id": "by_holding",
+                "name": "BY HOLDING",
+                "layout": [
+                    {
+                        "i": "blk_holding_metrics",
+                        "x": 0,
+                        "y": 0,
+                        "w": 40,
+                        "h": 5,
+                        "state": {
+                            "params": {
+                                "ticker": "AAPL"
+                            }
+                        },
+                        "groups": [
+                            "Selected Holding (BY HOLDING tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_holding_funds_table",
+                        "x": 0,
+                        "y": 5,
+                        "w": 40,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "ticker": "AAPL"
+                            }
+                        },
+                        "groups": [
+                            "Selected Holding (BY HOLDING tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_top_by_asset_class",
+                        "x": 0,
+                        "y": 23,
+                        "w": 13,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "asset_class": "Equity",
+                                "limit": 25
+                            }
+                        },
+                        "groups": [
+                            "Asset Class Filter (BY HOLDING tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_top_by_sector",
+                        "x": 13,
+                        "y": 23,
+                        "w": 14,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "sector": "Information Technology",
+                                "limit": 25
+                            }
+                        },
+                        "groups": [
+                            "Sector Filter (BY HOLDING tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_top_by_country",
+                        "x": 27,
+                        "y": 23,
+                        "w": 13,
+                        "h": 18,
+                        "state": {
+                            "params": {
+                                "country": "United States",
+                                "limit": 25
+                            }
+                        },
+                        "groups": [
+                            "Country Filter (BY HOLDING tab)"
+                        ]
+                    }
+                ]
+            }
+        },
+        "groups": [
+            {
+                "name": "Portfolio (TOTAL tab)",
+                "type": "endpointParam",
+                "paramName": "portfolio",
+                "defaultValue": "iShares"
+            },
+            {
+                "name": "Selected Fund (BY FUND tab)",
+                "type": "endpointParam",
+                "paramName": "ticker",
+                "defaultValue": "IEFA"
+            },
+            {
+                "name": "Selected Holding (BY HOLDING tab)",
+                "type": "endpointParam",
+                "paramName": "ticker",
+                "optionsEndpoint": "/options/holdings",
+                "defaultValue": "AAPL"
+            },
+            {
+                "name": "Asset Class Filter (BY HOLDING tab)",
+                "type": "endpointParam",
+                "paramName": "asset_class",
+                "optionsEndpoint": "/options/asset_classes",
+                "defaultValue": "Equity"
+            },
+            {
+                "name": "Sector Filter (BY HOLDING tab)",
+                "type": "endpointParam",
+                "paramName": "sector",
+                "optionsEndpoint": "/options/sectors",
+                "defaultValue": "Information Technology"
+            },
+            {
+                "name": "Country Filter (BY HOLDING tab)",
+                "type": "endpointParam",
+                "paramName": "country",
+                "optionsEndpoint": "/options/countries",
+                "defaultValue": "United States"
+            },
+            {
+                "name": "Group 4",
+                "type": "param",
+                "paramName": "limit",
+                "defaultValue": "10"
+            }
+        ]
+    }
+]

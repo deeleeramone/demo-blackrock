@@ -1,0 +1,13 @@
+services:
+  blackrock-api:
+    build: .
+    ports:
+      - "8040:8040"
+    volumes:
+      - blackrock-db:/data
+    environment:
+      BLACKROCK_DB_DIR: /data
+    restart: unless-stopped
+
+volumes:
+  blackrock-db:
