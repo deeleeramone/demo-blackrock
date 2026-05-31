@@ -1687,6 +1687,9 @@ def _fetch_premium_discount(portfolio_id: str, pd_url: str) -> dict | None:
     data: dict = {"dates": dates, "vals": vals, "quarters": quarters, "annual": annual}
     _PD_CACHE[portfolio_id] = (time.time(), data)
     return data
+
+
+def _fetch_perf_chart_data(portfolio_id: str, utm_url: str) -> dict | None:
     cached = _PERF_CHART_CACHE.get(portfolio_id)
     if cached and (time.time() - cached[0]) < _PERF_CHART_TTL:
         return cached[1]
