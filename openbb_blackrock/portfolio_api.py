@@ -1579,6 +1579,9 @@ def fund_distributions_qs(
 _PERF_CHART_CACHE: dict[str, tuple[float, dict]] = {}
 _PERF_CHART_TTL = 3600  # seconds
 
+_PD_CACHE: dict[str, tuple[float, dict]] = {}
+_PD_TTL = 3600  # seconds
+
 
 def _utm_source_url(fund: dict) -> str | None:
     page_url = (fund.get("product_page_url") or "").strip()
@@ -1592,7 +1595,98 @@ def _utm_source_url(fund: dict) -> str | None:
     return page_url + "?utm_source=openai"
 
 
-def _fetch_perf_chart_data(portfolio_id: str, utm_url: str) -> dict | None:
+def _pd_base_url(fund: dict) -> str | None:
+    page_url = (fund.get("product_page_url") or "").strip()
+    if not page_url:
+        return None
+    page_url = page_url.replace("/individual/products/", "/products/")
+    if not page_url.startswith("http"):
+        page_url = "https://www.ishares.com" + page_url
+    if "?" in page_url:
+        page_url = page_url.split("?")[0]
+    return page_url + "/1467271812596.ajax?fileType=csv&dataType=premiumDiscount"
+
+
+def _fetch_premium_discount(portfolio_id: str, pd_url: str) -> dict | None:
+    cached = _PD_CACHE.get(portfolio_id)
+    if cached and (time.time() - cached[0]) < _PD_TTL:
+        return cached[1]
+
+    r = _urllib_req.Request(
+        pd_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "*/*",
+            "Referer": "https://www.ishares.com/",
+        },
+    )
+    try:
+        with _urllib_req.urlopen(r, timeout=45) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+    decoded = _html_mod.unescape(body)
+
+    chart_parent = decoded.find('"premium-discount-chart"')
+    if chart_parent < 0:
+        return None
+    pd_idx = decoded.find('"name":"premiumDiscountChartData"', chart_parent)
+    if pd_idx < 0:
+        return None
+
+    date_m = re.search(r'"asOfDate":\[([0-9,]+)\]', decoded[chart_parent : pd_idx + 10000])
+    if not date_m:
+        return None
+    dates = [int(x) for x in date_m.group(1).split(",")]
+
+    val_m = re.search(
+        r'"name":"premiumDiscountChartData"[^[]+\[([^\]]+)\]',
+        decoded[pd_idx : pd_idx + 50000],
+    )
+    if not val_m:
+        return None
+    vals: list[float | None] = []
+    for x in val_m.group(1).split(","):
+        try:
+            vals.append(float(x.strip().strip('"')))
+        except ValueError:
+            vals.append(None)
+
+    quarters: dict[str, dict] = {}
+    qidx = decoded.find('"name":"premiumDiscountsByQuarters"')
+    if qidx >= 0:
+        qval_m = re.search(r'"value":(\{.*?\}),"visible"', decoded[qidx : qidx + 10000], re.DOTALL)
+        if qval_m:
+            try:
+                for v in json.loads(qval_m.group(1)).values():
+                    start = v.get("startDate")
+                    if start:
+                        quarters[str(start)] = {
+                            "start": start,
+                            "end": v.get("endDate"),
+                            "premium_days": v.get("premiumDays"),
+                            "nav_days": v.get("navDays"),
+                            "discount_days": v.get("discountDays"),
+                        }
+            except Exception:
+                pass
+
+    annual: dict = {}
+    yidx = decoded.find('"name":"previousYearEndDisc"')
+    if yidx >= 0:
+        chunk = decoded[yidx : yidx + 2000]
+        for field in ["startDate", "endDate", "premiumDays", "navDays", "discountDays"]:
+            fm = re.search(f'"{field}":([0-9-]+)', chunk)
+            if fm:
+                try:
+                    annual[field] = int(fm.group(1))
+                except ValueError:
+                    pass
+
+    data: dict = {"dates": dates, "vals": vals, "quarters": quarters, "annual": annual}
+    _PD_CACHE[portfolio_id] = (time.time(), data)
+    return data
     cached = _PERF_CHART_CACHE.get(portfolio_id)
     if cached and (time.time() - cached[0]) < _PERF_CHART_TTL:
         return cached[1]
@@ -2011,6 +2105,91 @@ def fund_growth_10k_qs(
     raw: bool = Query(False),
 ) -> Any:
     return fund_growth_10k(ticker, theme=theme, raw=raw)
+
+
+@app.get("/fund/{ident}/premium_discount")
+def fund_premium_discount(
+    ident: str,
+    theme: str = Query("light"),
+    raw: bool = Query(False),
+) -> Any:
+    fund = dict(_resolve_fund(ident))
+    pd_url = _pd_base_url(fund)
+    if not pd_url:
+        raise HTTPException(status_code=404, detail="No product page URL for this fund")
+
+    data = _fetch_premium_discount(fund["portfolio_id"], pd_url)
+    if not data:
+        raise HTTPException(status_code=502, detail="Could not retrieve premium/discount data from iShares")
+
+    date_strs = [_ymd_int_to_str(d) for d in data["dates"]]
+    vals = data["vals"]
+
+    if raw:
+        return [{"date": d, "premium_discount_pct": v} for d, v in zip(date_strs, vals) if v is not None]
+
+    is_dark = (theme or "").lower() == "dark"
+    paper_bg = "rgba(0,0,0,0)"
+    plot_bg = "rgba(0,0,0,0)"
+    font_color = "#e5e7eb" if is_dark else "#111827"
+    grid_color = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.08)"
+
+    return {
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "name": "Premium/Discount",
+                "x": date_strs,
+                "y": vals,
+                "line": {"color": "#16a34a", "width": 1.5},
+                "hovertemplate": "%{x}<br>%{y:.4f}%<extra></extra>",
+            }
+        ],
+        "layout": {
+            "xaxis": {
+                "type": "date",
+                "tickfont": {"color": font_color, "size": 11},
+                "showgrid": False,
+                "zeroline": False,
+            },
+            "yaxis": {
+                "ticksuffix": "%",
+                "tickformat": ".2f",
+                "tickfont": {"color": font_color, "size": 11},
+                "showgrid": True,
+                "gridcolor": grid_color,
+                "zeroline": True,
+                "zerolinecolor": grid_color,
+                "zerolinewidth": 1,
+            },
+            "legend": {
+                "orientation": "h",
+                "x": 0.5,
+                "xanchor": "center",
+                "y": 1.02,
+                "yanchor": "bottom",
+                "font": {"color": font_color, "size": 12},
+                "bgcolor": "rgba(0,0,0,0)",
+            },
+            "margin": {"t": 40, "b": 50, "l": 70, "r": 20},
+            "template": "plotly_dark" if is_dark else "plotly_white",
+            "paper_bgcolor": paper_bg,
+            "plot_bgcolor": plot_bg,
+            "font": {"color": font_color, "family": "Inter, system-ui, sans-serif"},
+            "hoverlabel": {"bgcolor": "#111827" if is_dark else "#ffffff"},
+        },
+        "config": {"responsive": True, "displayModeBar": False},
+    }
+
+
+@app.get("/fund_premium_discount")
+def fund_premium_discount_qs(
+    ticker: str = Query(...),
+    theme: str = Query("light"),
+    raw: bool = Query(False),
+) -> Any:
+    return fund_premium_discount(ticker, theme=theme, raw=raw)
 
 
 @app.get("/fund_performance")

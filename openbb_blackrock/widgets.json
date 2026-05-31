@@ -2719,5 +2719,39 @@
                 ]
             }
         }
+    },
+    "blk_fund_premium_discount": {
+        "name": "Premium/Discount",
+        "description": "Daily closing price premium or discount to NAV as a percentage. Data sourced from iShares.",
+        "category": "BlackRock Drilldown",
+        "subCategory": "Performance",
+        "type": "chart",
+        "endpoint": "/fund_premium_discount",
+        "raw": true,
+        "gridData": {
+            "w": 40,
+            "h": 14
+        },
+        "params": [
+            {
+                "paramName": "portfolio",
+                "label": "Portfolio",
+                "type": "endpoint",
+                "optionsEndpoint": "/options/portfolios",
+                "value": null,
+                "show": false
+            },
+            {
+                "paramName": "ticker",
+                "label": "Fund",
+                "type": "endpoint",
+                "optionsEndpoint": "/options/funds",
+                "optionsParams": {
+                    "portfolio": "$portfolio"
+                },
+                "value": "IHI",
+                "show": true
+            }
+        ]
     }
 }

@@ -731,6 +731,22 @@
                         ]
                     },
                     {
+                        "i": "blk_fund_premium_discount",
+                        "x": 0,
+                        "y": 159,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
                         "i": "blk_fund_performance",
                         "x": 0,
                         "y": 7,
