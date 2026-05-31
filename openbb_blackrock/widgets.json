@@ -1505,18 +1505,18 @@
                             },
                             {
                                 "field": "currency",
-                                "headerName": "Ccy",
+                                "headerName": "Trading Ccy",
                                 "cellDataType": "text",
-                                "width": 70,
+                                "width": 95,
                                 "align": "center"
                             },
                             {
                                 "field": "fx_rate",
-                                "headerName": "FX Rate (USD)",
+                                "headerName": "FX Rate (Ccy/USD)",
                                 "cellDataType": "number",
                                 "decimalPlaces": 4,
                                 "align": "right",
-                                "width": 110
+                                "width": 130
                             },
                             {
                                 "field": "market_value_usd",
@@ -1538,11 +1538,11 @@
                             },
                             {
                                 "field": "price",
-                                "headerName": "Price",
+                                "headerName": "Price (USD)",
                                 "cellDataType": "number",
                                 "decimalPlaces": 2,
                                 "align": "right",
-                                "width": 100
+                                "width": 130
                             },
                             {
                                 "field": "coupon_pct",
