@@ -62,8 +62,13 @@ def _extract_fund_documents(html: str) -> dict[str, dict]:
             or raw
             or "Document"
         )
+        label = re.sub(r"^View\s*", "", label, flags=re.IGNORECASE).strip() or label
         slug_m = re.search(r"/literature/([^/?#]+)/", url)
         slug = slug_m.group(1) if slug_m else "document"
+        # deduplicate by resolved base URL (strip query string for comparison)
+        base_url = url.split("?")[0]
+        if any(d["url"].split("?")[0] == base_url for d in docs.values()):
+            continue
         if slug in docs:
             slug = f"{slug}-{len(docs)}"
         docs[slug] = {"label": label, "url": url}
@@ -91,9 +96,7 @@ def populate_us_documents(conn: sqlite3.Connection) -> int:
         for i, (pid, ticker, page_url) in enumerate(all_funds, 1):
             if not page_url.startswith("http"):
                 if "/us/individual" in page_url:
-                    page_url = "https://www.ishares.com" + page_url.replace(
-                        "/us/individual", "/us"
-                    )
+                    page_url = "https://www.ishares.com" + page_url.replace("/us/individual", "/us")
                 else:
                     page_url = "https://www.ishares.com" + page_url
             try:
@@ -139,9 +142,7 @@ async def fetch_pdf_bytes(url: str, cache_key: str) -> bytes:
             return data
         p.unlink()
     url = _direct_pdf_url(url)
-    async with httpx.AsyncClient(
-        headers=_HDRS, follow_redirects=True, timeout=60.0
-    ) as client:
+    async with httpx.AsyncClient(headers=_HDRS, follow_redirects=True, timeout=60.0) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         ct = resp.headers.get("content-type", "")

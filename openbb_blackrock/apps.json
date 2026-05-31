@@ -508,7 +508,7 @@
                     {
                         "i": "blk_byfund_asset_class",
                         "x": 0,
-                        "y": 7,
+                        "y": 21,
                         "w": 40,
                         "h": 14,
                         "state": {
@@ -524,7 +524,7 @@
                     {
                         "i": "blk_byfund_sector",
                         "x": 0,
-                        "y": 21,
+                        "y": 35,
                         "w": 40,
                         "h": 14,
                         "state": {
@@ -540,7 +540,7 @@
                     {
                         "i": "blk_byfund_country",
                         "x": 0,
-                        "y": 35,
+                        "y": 49,
                         "w": 40,
                         "h": 14,
                         "state": {
@@ -556,7 +556,7 @@
                     {
                         "i": "blk_drill_fund_holdings_table",
                         "x": 0,
-                        "y": 81,
+                        "y": 95,
                         "w": 40,
                         "h": 16,
                         "state": {
@@ -601,7 +601,7 @@
                     {
                         "i": "blk_drill_fund_distributions",
                         "x": 0,
-                        "y": 97,
+                        "y": 111,
                         "w": 40,
                         "h": 14,
                         "state": {
@@ -643,7 +643,7 @@
                     {
                         "i": "blk_drill_fund_nav_history",
                         "x": 0,
-                        "y": 67,
+                        "y": 81,
                         "w": 40,
                         "h": 14,
                         "state": {
@@ -682,7 +682,7 @@
                     {
                         "i": "blk_drill_fund_documents",
                         "x": 0,
-                        "y": 111,
+                        "y": 125,
                         "w": 40,
                         "h": 18,
                         "state": {
@@ -701,13 +701,46 @@
                     {
                         "i": "blk_byfund_top10_compare",
                         "x": 0,
-                        "y": 49,
+                        "y": 63,
                         "w": 40,
                         "h": 18,
                         "state": {
                             "params": {
                                 "portfolio": "iShares",
                                 "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_fund_growth_10k",
+                        "x": 0,
+                        "y": 143,
+                        "w": 40,
+                        "h": 16,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA"
+                            }
+                        },
+                        "groups": [
+                            "Selected Fund (BY FUND tab)"
+                        ]
+                    },
+                    {
+                        "i": "blk_fund_performance",
+                        "x": 0,
+                        "y": 7,
+                        "w": 40,
+                        "h": 14,
+                        "state": {
+                            "params": {
+                                "portfolio": "iShares",
+                                "ticker": "IEFA",
+                                "tab": "average_annual"
                             }
                         },
                         "groups": [

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import bisect
+import html as _html_mod
 import json
 import math
 import re
 import sqlite3
+import time
+import urllib.request as _urllib_req
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -74,6 +78,70 @@ def _scalar(sql: str, params: tuple = ()) -> Any:
         cur = c.execute(sql, params)
         row = cur.fetchone()
         return row[0] if row else None
+
+
+def _compute_total_return(
+    portfolio_id: str,
+    start_date: str,
+    *,
+    annualize_years: float | None = None,
+    end_date: str | None = None,
+) -> float | None:
+    """Total return (NAV + reinvested dividends) from start_date to the latest
+    available nav_history row (or end_date if specified).  Optionally
+    annualizes over *annualize_years*.
+    Returns a percentage (e.g. -20.51) or None if data is insufficient.
+    """
+    with _conn() as conn:
+        start_row = conn.execute(
+            "SELECT nav_per_share FROM nav_history "
+            "WHERE portfolio_id = ? AND as_of_date <= ? AND nav_per_share IS NOT NULL "
+            "ORDER BY as_of_date DESC LIMIT 1",
+            (portfolio_id, start_date),
+        ).fetchone()
+        if not start_row:
+            return None
+        start_nav = start_row[0]
+
+        if end_date:
+            end_row = conn.execute(
+                "SELECT nav_per_share FROM nav_history "
+                "WHERE portfolio_id = ? AND as_of_date <= ? AND nav_per_share IS NOT NULL "
+                "ORDER BY as_of_date DESC LIMIT 1",
+                (portfolio_id, end_date),
+            ).fetchone()
+        else:
+            end_row = conn.execute(
+                "SELECT nav_per_share FROM nav_history "
+                "WHERE portfolio_id = ? AND nav_per_share IS NOT NULL "
+                "ORDER BY as_of_date DESC LIMIT 1",
+                (portfolio_id,),
+            ).fetchone()
+        if not end_row:
+            return None
+        latest_nav = end_row[0]
+
+        div_date_cutoff = end_date or "9999-12-31"
+        div_rows = conn.execute(
+            "SELECT nav_per_share, ex_dividends FROM nav_history "
+            "WHERE portfolio_id = ? AND ex_dividends > 0 AND as_of_date > ? "
+            "AND as_of_date <= ? AND nav_per_share IS NOT NULL "
+            "ORDER BY as_of_date",
+            (portfolio_id, start_date, div_date_cutoff),
+        ).fetchall()
+
+    cum_factor = 1.0
+    for ex_nav, div in div_rows:
+        if ex_nav and ex_nav > 0 and div:
+            cum_factor *= (ex_nav + div) / ex_nav
+
+    raw = cum_factor * latest_nav / start_nav - 1.0
+    if annualize_years and annualize_years > 0:
+        try:
+            raw = (1.0 + raw) ** (1.0 / annualize_years) - 1.0
+        except (ValueError, ZeroDivisionError):
+            return None
+    return raw * 100.0
 
 
 @app.on_event("startup")
@@ -569,6 +637,8 @@ def fund_metrics(ident: str) -> list[dict]:
     def fmt_pct(v: float | None) -> str:
         return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
 
+    from datetime import date as _date, timedelta as _td
+
     # 1Y AUM delta from holdings snapshots already in cache (no live fetch
     # here — keeps the metrics endpoint snappy; live fetch happens only on
     # the breakdown/top10 compare widgets).
@@ -582,8 +652,6 @@ def fund_metrics(ident: str) -> list[dict]:
             (pid,),
         ).fetchall()
     if len(rows) >= 2:
-        from datetime import date as _date, timedelta as _td
-
         try:
             cur_date = _date.fromisoformat(rows[0][0])
             target = cur_date - _td(days=365)
@@ -603,19 +671,32 @@ def fund_metrics(ident: str) -> list[dict]:
         except (ValueError, ZeroDivisionError):
             pass
 
+    _today = _date.today()
+    _ytd_start = f"{_today.year - 1}-12-31"
+    _y1_start = _today.replace(year=_today.year - 1).isoformat()
+    _y3_start = _today.replace(year=_today.year - 3).isoformat()
+    _y5_start = _today.replace(year=_today.year - 5).isoformat()
+    _y10_start = _today.replace(year=_today.year - 10).isoformat()
+
+    _ytd = _compute_total_return(pid, _ytd_start)
+    _y1 = _compute_total_return(pid, _y1_start)
+    _y3 = _compute_total_return(pid, _y3_start, annualize_years=3.0)
+    _y5 = _compute_total_return(pid, _y5_start, annualize_years=5.0)
+    _y10 = _compute_total_return(pid, _y10_start, annualize_years=10.0)
+
     tiles = [
         {
             "label": f["ticker"] or f["portfolio_id"],
             "value": fmt_aum(f.get("total_aum_usd")),
             "delta": aum_delta,
         },
-        {"label": "YTD Return", "value": fmt_pct(f.get("nav_ytd_pct")), "delta": ""},
-        {"label": "1Y Return", "value": fmt_pct(f.get("nav_1y_pct")), "delta": ""},
-        {"label": "3Y Annualized", "value": fmt_pct(f.get("nav_3y_pct")), "delta": ""},
-        {"label": "5Y Annualized", "value": fmt_pct(f.get("nav_5y_pct")), "delta": ""},
+        {"label": "YTD Return", "value": fmt_pct(_ytd if _ytd is not None else f.get("nav_ytd_pct")), "delta": ""},
+        {"label": "1Y Return", "value": fmt_pct(_y1 if _y1 is not None else f.get("nav_1y_pct")), "delta": ""},
+        {"label": "3Y Annualized", "value": fmt_pct(_y3 if _y3 is not None else f.get("nav_3y_pct")), "delta": ""},
+        {"label": "5Y Annualized", "value": fmt_pct(_y5 if _y5 is not None else f.get("nav_5y_pct")), "delta": ""},
         {
             "label": "10Y Annualized",
-            "value": fmt_pct(f.get("nav_10y_pct")),
+            "value": fmt_pct(_y10 if _y10 is not None else f.get("nav_10y_pct")),
             "delta": "",
         },
         {
@@ -1491,7 +1572,455 @@ def fund_distributions_qs(
     return fund_distributions(ticker, limit=limit)
 
 
-@app.get("/options/portfolios")
+# ---------------------------------------------------------------------------
+# Performance chart data — fetched from iShares product page and cached
+# ---------------------------------------------------------------------------
+
+_PERF_CHART_CACHE: dict[str, tuple[float, dict]] = {}
+_PERF_CHART_TTL = 3600  # seconds
+
+
+def _utm_source_url(fund: dict) -> str | None:
+    page_url = (fund.get("product_page_url") or "").strip()
+    if not page_url:
+        return None
+    page_url = page_url.replace("/individual/products/", "/products/")
+    if not page_url.startswith("http"):
+        page_url = "https://www.ishares.com" + page_url
+    if "?" in page_url:
+        page_url = page_url.split("?")[0]
+    return page_url + "?utm_source=openai"
+
+
+def _fetch_perf_chart_data(portfolio_id: str, utm_url: str) -> dict | None:
+    cached = _PERF_CHART_CACHE.get(portfolio_id)
+    if cached and (time.time() - cached[0]) < _PERF_CHART_TTL:
+        return cached[1]
+
+    req = _urllib_req.Request(
+        utm_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
+    try:
+        with _urllib_req.urlopen(req, timeout=45) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+    decoded = _html_mod.unescape(body)
+
+    perf_idx = decoded.find('"name":"performanceData"')
+    if perf_idx < 0:
+        return None
+    perf_obj_start = decoded.rfind("{", 0, perf_idx)
+    if perf_obj_start < 0:
+        return None
+
+    m = re.search(r'"asOfDate":\[([0-9,]+)\]', decoded[perf_obj_start : perf_obj_start + 300000])
+    if not m:
+        return None
+    fund_dates = [int(x) for x in m.group(1).split(",")]
+
+    pm = re.search(r'"name":"performanceData"[^[]+\[([^\]]+)\]', decoded[perf_idx : perf_idx + 200000])
+    if not pm:
+        return None
+    fund_vals = [float(x.strip('" ')) for x in pm.group(1).split(",")]
+
+    bm_idx = decoded.find('"name":"benchmarkData"')
+    if bm_idx < 0:
+        return None
+    bm_obj_start = decoded.rfind("{", 0, bm_idx)
+    if bm_obj_start < 0:
+        return None
+
+    mb = re.search(r'"asOfDate":\[([0-9,]+)\]', decoded[bm_obj_start : bm_obj_start + 300000])
+    if not mb:
+        return None
+    bm_dates = [int(x) for x in mb.group(1).split(",")]
+
+    bmv = re.search(r'"name":"benchmarkData"[^[]+\[([^\]]+)\]', decoded[bm_idx : bm_idx + 200000])
+    if not bmv:
+        return None
+    bm_vals = [float(x.strip('" ')) for x in bmv.group(1).split(",")]
+
+    bm_name = "Benchmark"
+    nm_idx = decoded.find('"benchmarkName"', bm_obj_start, bm_obj_start + 400000)
+    if nm_idx > 0:
+        nm_val = re.search(r'"formattedValue":"([^"]+)"', decoded[nm_idx : nm_idx + 500])
+        if nm_val:
+            bm_name = nm_val.group(1)
+
+    data: dict = {
+        "fund_dates": fund_dates,
+        "fund_vals": fund_vals,
+        "bm_dates": bm_dates,
+        "bm_vals": bm_vals,
+        "bm_name": bm_name,
+    }
+    _PERF_CHART_CACHE[portfolio_id] = (time.time(), data)
+    return data
+
+
+def _ymd_int_to_str(ymd: int) -> str:
+    y, md = divmod(ymd, 10000)
+    m, d = divmod(md, 100)
+    return f"{y:04d}-{m:02d}-{d:02d}"
+
+
+def _date_to_ymd(d: "date") -> int:
+    return d.year * 10000 + d.month * 100 + d.day
+
+
+def _bm_return_from_series(
+    dates: list[int],
+    vals: list[float],
+    start_ymd: int,
+    end_ymd: int | None = None,
+    *,
+    annualize_years: float | None = None,
+) -> float | None:
+    if not dates or not vals:
+        return None
+    if end_ymd is None:
+        end_ymd = dates[-1]
+    si = bisect.bisect_right(dates, start_ymd) - 1
+    if si < 0:
+        return None
+    ei = bisect.bisect_right(dates, end_ymd) - 1
+    if ei <= si:
+        return None
+    sv, ev = vals[si], vals[ei]
+    if sv <= 0:
+        return None
+    raw = ev / sv - 1.0
+    if annualize_years and annualize_years > 0:
+        try:
+            raw = (1.0 + raw) ** (1.0 / annualize_years) - 1.0
+        except (ValueError, ZeroDivisionError):
+            return None
+    return raw * 100.0
+
+
+@app.get("/fund/{ident}/growth_10k")
+def fund_growth_10k(
+    ident: str,
+    theme: str = Query("light"),
+    raw: bool = Query(False),
+) -> Any:
+    fund = dict(_resolve_fund(ident))
+    utm_url = _utm_source_url(fund)
+    if not utm_url:
+        raise HTTPException(status_code=404, detail="No product page URL for this fund")
+
+    data = _fetch_perf_chart_data(fund["portfolio_id"], utm_url)
+    if not data:
+        raise HTTPException(status_code=502, detail="Could not retrieve chart data from iShares")
+
+    fund_date_strs = [_ymd_int_to_str(d) for d in data["fund_dates"]]
+    bm_date_strs = [_ymd_int_to_str(d) for d in data["bm_dates"]]
+
+    fund_name = fund.get("name") or ident.upper()
+    bm_name = data["bm_name"]
+
+    if raw:
+        fund_col = fund.get("ticker") or ident.upper()
+        fund_map = dict(zip(fund_date_strs, data["fund_vals"]))
+        bm_map = dict(zip(bm_date_strs, data["bm_vals"]))
+        all_dates = sorted(set(fund_date_strs) | set(bm_date_strs))
+        return [{"date": d, fund_col: fund_map.get(d), bm_name: bm_map.get(d)} for d in all_dates]
+
+    is_dark = (theme or "").lower() == "dark"
+    paper_bg = "rgba(0,0,0,0)"
+    plot_bg = "rgba(0,0,0,0)"
+    font_color = "#e5e7eb" if is_dark else "#111827"
+    grid_color = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.08)"
+
+    return {
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "name": fund.get("ticker") or ident.upper(),
+                "x": fund_date_strs,
+                "y": data["fund_vals"],
+                "line": {"color": "#003c7e", "width": 2},
+                "hovertemplate": "%{x}<br>$%{y:,.0f}<extra></extra>",
+            },
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "name": bm_name,
+                "x": bm_date_strs,
+                "y": data["bm_vals"],
+                "line": {"color": "#f59e0b", "width": 2},
+                "hovertemplate": "%{x}<br>$%{y:,.0f}<extra></extra>",
+            },
+        ],
+        "layout": {
+            "xaxis": {
+                "type": "date",
+                "tickfont": {"color": font_color, "size": 11},
+                "showgrid": False,
+                "zeroline": False,
+            },
+            "yaxis": {
+                "tickprefix": "$",
+                "tickformat": ",.0f",
+                "tickfont": {"color": font_color, "size": 11},
+                "showgrid": True,
+                "gridcolor": grid_color,
+                "zeroline": False,
+            },
+            "legend": {
+                "orientation": "h",
+                "x": 0.5,
+                "xanchor": "center",
+                "y": 1.02,
+                "yanchor": "bottom",
+                "font": {"color": font_color, "size": 12},
+                "bgcolor": "rgba(0,0,0,0)",
+            },
+            "margin": {"t": 40, "b": 50, "l": 70, "r": 20},
+            "template": "plotly_dark" if is_dark else "plotly_white",
+            "paper_bgcolor": paper_bg,
+            "plot_bgcolor": plot_bg,
+            "font": {"color": font_color, "family": "Inter, system-ui, sans-serif"},
+            "hoverlabel": {"bgcolor": "#111827" if is_dark else "#ffffff"},
+        },
+        "config": {"responsive": True, "displayModeBar": False},
+    }
+
+
+@app.get("/fund/{ident}/performance")
+def fund_performance(
+    ident: str,
+    tab: str = Query("average_annual"),
+) -> dict:
+    from datetime import date as _date
+
+    fund = dict(_resolve_fund(ident))
+    pid = fund["portfolio_id"]
+    today = _date.today()
+
+    utm_url = _utm_source_url(fund)
+    chart_data = _fetch_perf_chart_data(pid, utm_url) if utm_url else None
+
+    bm_dates = chart_data["bm_dates"] if chart_data else []
+    bm_vals = chart_data["bm_vals"] if chart_data else []
+    bm_name = (chart_data["bm_name"] if chart_data else "Benchmark") or "Benchmark"
+
+    today_ymd = _date_to_ymd(today)
+
+    def _fund_ret(start: str, *, ann: float | None = None, end: str | None = None) -> float | None:
+        return _compute_total_return(pid, start, annualize_years=ann, end_date=end)
+
+    def _bm_ret(start_ymd: int, *, ann: float | None = None, end_ymd: int | None = None) -> float | None:
+        return _bm_return_from_series(bm_dates, bm_vals, start_ymd, end_ymd, annualize_years=ann)
+
+    def _fmt(v: float | None) -> float | None:
+        if v is None:
+            return None
+        return round(v, 2)
+
+    if tab == "average_annual":
+        ytd_start = f"{today.year - 1}-12-31"
+        y1_start = today.replace(year=today.year - 1).isoformat()
+        y3_start = today.replace(year=today.year - 3).isoformat()
+        y5_start = today.replace(year=today.year - 5).isoformat()
+        y10_start = today.replace(year=today.year - 10).isoformat()
+
+        with _conn() as conn:
+            inc_row = conn.execute(
+                "SELECT MIN(as_of_date) FROM nav_history WHERE portfolio_id = ? AND nav_per_share IS NOT NULL",
+                (pid,),
+            ).fetchone()
+        inception_date = inc_row[0] if inc_row and inc_row[0] else None
+        inc_years: float | None = None
+        if inception_date:
+            try:
+                inc_dt = _date.fromisoformat(inception_date)
+                inc_years = max((today - inc_dt).days / 365.25, 0.01)
+            except ValueError:
+                pass
+
+        rows = [
+            {
+                "period": "YTD",
+                "fund_nav_pct": _fmt(_fund_ret(ytd_start)),
+                "benchmark_pct": _fmt(_bm_ret(_date_to_ymd(today.replace(year=today.year - 1, month=12, day=31)))),
+            },
+            {
+                "period": "1 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y1_start, ann=1.0)),
+                "benchmark_pct": _fmt(_bm_ret(int(y1_start.replace("-", "")), ann=1.0)),
+            },
+            {
+                "period": "3 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y3_start, ann=3.0)),
+                "benchmark_pct": _fmt(_bm_ret(int(y3_start.replace("-", "")), ann=3.0)),
+            },
+            {
+                "period": "5 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y5_start, ann=5.0)),
+                "benchmark_pct": _fmt(_bm_ret(int(y5_start.replace("-", "")), ann=5.0)),
+            },
+            {
+                "period": "10 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y10_start, ann=10.0)),
+                "benchmark_pct": _fmt(_bm_ret(int(y10_start.replace("-", "")), ann=10.0)),
+            },
+        ]
+        if inception_date and inc_years is not None:
+            rows.append(
+                {
+                    "period": "Since Inception",
+                    "fund_nav_pct": _fmt(_fund_ret(inception_date, ann=inc_years)),
+                    "benchmark_pct": _fmt(_bm_ret(int(inception_date.replace("-", "")), ann=inc_years)),
+                }
+            )
+
+    elif tab == "cumulative":
+        ytd_start = f"{today.year - 1}-12-31"
+        y1_start = today.replace(year=today.year - 1).isoformat()
+        y3_start = today.replace(year=today.year - 3).isoformat()
+        y5_start = today.replace(year=today.year - 5).isoformat()
+        y10_start = today.replace(year=today.year - 10).isoformat()
+
+        def _months_ago(n: int) -> str:
+            m = today.month - n
+            y = today.year
+            while m <= 0:
+                m += 12
+                y -= 1
+            import calendar
+
+            last_day = calendar.monthrange(y, m)[1]
+            return f"{y}-{m:02d}-{min(today.day, last_day):02d}"
+
+        with _conn() as conn:
+            inc_row = conn.execute(
+                "SELECT MIN(as_of_date) FROM nav_history WHERE portfolio_id = ? AND nav_per_share IS NOT NULL",
+                (pid,),
+            ).fetchone()
+        inception_date = inc_row[0] if inc_row and inc_row[0] else None
+
+        rows = [
+            {
+                "period": "YTD",
+                "fund_nav_pct": _fmt(_fund_ret(ytd_start)),
+                "benchmark_pct": _fmt(_bm_ret(_date_to_ymd(today.replace(year=today.year - 1, month=12, day=31)))),
+            },
+            {
+                "period": "1 Month",
+                "fund_nav_pct": _fmt(_fund_ret(_months_ago(1))),
+                "benchmark_pct": _fmt(_bm_ret(int(_months_ago(1).replace("-", "")))),
+            },
+            {
+                "period": "3 Month",
+                "fund_nav_pct": _fmt(_fund_ret(_months_ago(3))),
+                "benchmark_pct": _fmt(_bm_ret(int(_months_ago(3).replace("-", "")))),
+            },
+            {
+                "period": "6 Month",
+                "fund_nav_pct": _fmt(_fund_ret(_months_ago(6))),
+                "benchmark_pct": _fmt(_bm_ret(int(_months_ago(6).replace("-", "")))),
+            },
+            {
+                "period": "1 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y1_start)),
+                "benchmark_pct": _fmt(_bm_ret(int(y1_start.replace("-", "")))),
+            },
+            {
+                "period": "3 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y3_start)),
+                "benchmark_pct": _fmt(_bm_ret(int(y3_start.replace("-", "")))),
+            },
+            {
+                "period": "5 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y5_start)),
+                "benchmark_pct": _fmt(_bm_ret(int(y5_start.replace("-", "")))),
+            },
+            {
+                "period": "10 Year",
+                "fund_nav_pct": _fmt(_fund_ret(y10_start)),
+                "benchmark_pct": _fmt(_bm_ret(int(y10_start.replace("-", "")))),
+            },
+        ]
+        if inception_date:
+            rows.append(
+                {
+                    "period": "Since Inception",
+                    "fund_nav_pct": _fmt(_fund_ret(inception_date)),
+                    "benchmark_pct": _fmt(_bm_ret(int(inception_date.replace("-", "")))),
+                }
+            )
+
+    elif tab == "calendar_year":
+        with _conn() as conn:
+            inc_row = conn.execute(
+                "SELECT MIN(as_of_date) FROM nav_history WHERE portfolio_id = ? AND nav_per_share IS NOT NULL",
+                (pid,),
+            ).fetchone()
+        inception_date = inc_row[0] if inc_row and inc_row[0] else None
+        if not inception_date:
+            return {"as_of": today.isoformat(), "tab": tab, "benchmark_name": bm_name, "rows": []}
+
+        try:
+            inception_year = int(inception_date[:4])
+        except ValueError:
+            inception_year = today.year
+
+        rows = []
+        for yr in range(today.year, inception_year - 1, -1):
+            start_str = f"{yr - 1}-12-31"
+            if yr < today.year:
+                end_str = f"{yr}-12-31"
+            else:
+                end_str = None
+            end_ymd = int(end_str.replace("-", "")) if end_str else None
+            rows.append(
+                {
+                    "period": str(yr),
+                    "fund_nav_pct": _fmt(_fund_ret(start_str, end=end_str)),
+                    "benchmark_pct": _fmt(_bm_ret(int(start_str.replace("-", "")), end_ymd=end_ymd)),
+                }
+            )
+
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown tab '{tab}'; choose from average_annual, cumulative, calendar_year",
+        )
+
+    return {
+        "as_of": today.isoformat(),
+        "tab": tab,
+        "benchmark_name": bm_name,
+        "rows": rows,
+    }
+
+
+@app.get("/fund_growth_10k")
+def fund_growth_10k_qs(
+    ticker: str = Query(...),
+    theme: str = Query("light"),
+    raw: bool = Query(False),
+) -> Any:
+    return fund_growth_10k(ticker, theme=theme, raw=raw)
+
+
+@app.get("/fund_performance")
+def fund_performance_qs(
+    ticker: str = Query(...),
+    tab: str = Query("average_annual"),
+) -> dict:
+    return fund_performance(ticker, tab=tab)
+
+
 def opt_portfolios() -> list[dict]:
     df = _read_sql("SELECT DISTINCT portfolio FROM funds ORDER BY portfolio")
     return [{"label": "All Portfolios", "value": ""}] + [{"label": p, "value": p} for p in df["portfolio"].tolist()]
@@ -1907,7 +2436,7 @@ def _pie_figure(
             "plot_bgcolor": plot_bg,
             "font": {"color": font_color},
         },
-        "config": {"responsive": True, "displayModeBar": True},
+        "config": {"responsive": True, "displayModeBar": False},
     }
 
 
@@ -1996,7 +2525,7 @@ def _hbar_figure(
             "plot_bgcolor": plot_bg,
             "font": {"color": font_color},
         },
-        "config": {"responsive": True, "displayModeBar": True},
+        "config": {"responsive": True, "displayModeBar": False},
     }
 
 
@@ -2356,7 +2885,7 @@ def chart_returns_attribution(
             "plot_bgcolor": "rgba(0,0,0,0)" if is_dark else "#ffffff",
             "font": {"color": font_color},
         },
-        "config": {"responsive": True, "displayModeBar": True},
+        "config": {"responsive": True, "displayModeBar": False},
     }
 
 
@@ -3288,8 +3817,7 @@ def doc_options(
     return [{"label": f"{tk} - {r['label']}", "value": f"US|{tk}|{r['slug']}"} for _, r in df.iterrows()]
 
 
-@app.post("/blackrock/view_documents")
-async def view_documents(doc_name: list[str] = Body(..., embed=True)) -> list[dict]:
+async def _resolve_documents(doc_name: list[str]) -> list[dict]:
     files: list = []
     for name in doc_name[:1]:
         parts = name.split("|", 2)
@@ -3321,4 +3849,16 @@ async def view_documents(doc_name: list[str] = Body(..., embed=True)) -> list[di
             )
         except Exception as exc:
             files.append({"error_type": "download_error", "content": str(exc)})
+    return files
+
+
+@app.get("/blackrock/view_documents")
+async def view_documents_get(doc_name: list[str] = Query(...)) -> list[dict]:
+    files = await _resolve_documents(doc_name)
+    return JSONResponse(headers={"Content-Type": "application/json"}, content=files)
+
+
+@app.post("/blackrock/view_documents")
+async def view_documents(doc_name: list[str] = Body(..., embed=True)) -> list[dict]:
+    files = await _resolve_documents(doc_name)
     return JSONResponse(headers={"Content-Type": "application/json"}, content=files)
