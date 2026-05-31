@@ -1579,8 +1579,13 @@ def opt_asset_classes(
 @app.get("/options/holding_types")
 def opt_holding_types() -> list[dict]:
     _KNOWN = {
-        "Equity", "Fixed Income", "Alternative", "Money Market",
-        "Commodity", "Real Estate", "Other",
+        "Equity",
+        "Fixed Income",
+        "Alternative",
+        "Money Market",
+        "Commodity",
+        "Real Estate",
+        "Other",
     }
     df = _read_sql(
         """SELECT holding_type, SUM(market_value_usd) AS mv
@@ -1591,9 +1596,7 @@ def opt_holding_types() -> list[dict]:
         (),
     )
     rows = [
-        {"label": r["holding_type"], "value": r["holding_type"]}
-        for _, r in df.iterrows()
-        if r["holding_type"] in _KNOWN
+        {"label": r["holding_type"], "value": r["holding_type"]} for _, r in df.iterrows() if r["holding_type"] in _KNOWN
     ]
     return rows
 
