@@ -201,6 +201,23 @@ def _clean(s: str | None) -> str | None:
     return s or None
 
 
+def _get(raw_lc: dict[str, str], *names: str) -> str | None:
+    """First non-empty cleaned value among ``names`` in the lower-cased
+    header→cell map, else ``None``."""
+    for nm in names:
+        if nm in raw_lc:
+            return _clean(raw_lc[nm])
+    return None
+
+
+def _getf(raw_lc: dict[str, str], *names: str) -> float | None:
+    """Like :func:`_get` but coerced to ``float`` (``None`` if absent/blank)."""
+    for nm in names:
+        if nm in raw_lc:
+            return _to_float(raw_lc[nm])
+    return None
+
+
 def _parse_ishares_csv_as_of_date(csv_text: str) -> date | None:
     for line in csv_text.replace("\r\n", "\n").split("\n")[:20]:
         if not line.lower().startswith("fund holdings as of"):
@@ -260,100 +277,59 @@ def _parse_csv_holdings(
       Effective Date.
     """
     lines = csv_text.replace("\r\n", "\n").split("\n")
-    header_idx = -1
-    for i, line in enumerate(lines):
-        low = line.lower()
-        if "weight" in low and ("name" in low or "ticker" in low or "cusip" in low):
-            header_idx = i
-            break
-    if header_idx == -1:
+
+    def _is_header(line: str) -> bool:
+        low = line.strip().strip('"').lower()
+        return "weight" in low and low.startswith(("ticker", "name", "cusip"))
+
+    # A single download can contain MULTIPLE holdings sections, each with
+    # its own header — e.g. buy-write funds (TLTW) list an options section
+    # (``Type``, ``Strike price`` columns) followed by a bond section with a
+    # different layout.  Detect every header row and parse each section
+    # against its own header; applying one header to all sections shifts
+    # every field of the others.
+    header_idxs = [i for i, line in enumerate(lines) if _is_header(line)]
+    if not header_idxs:
         return []
 
-    reader = csv.reader(io.StringIO("\n".join(lines[header_idx:])))
-    rows = list(reader)
-    if len(rows) < 2:
-        return []
-
-    header_raw = [h.strip().strip('"') for h in rows[0]]
-    header_lc = [h.lower() for h in header_raw]
-    n_cols = len(header_raw)
-
-    def col(*names: str) -> int:
-        for n in names:
-            if n in header_lc:
-                return header_lc.index(n)
-        return -1
-
-    # Common columns
-    i_name = col("name")
-    i_tkr = col("ticker")
-    i_sec = col("sector")
-    i_ac = col("asset class")
-    i_mv = col("market value", "market value (usd)", "market value (gbp)")
-    i_wt = col("weight (%)", "weight(%)", "weight")
-    i_qty = col("quantity", "shares")
-    i_par = col("par value")
-    i_price = col("price")
-    i_notional = col("notional value")
-    i_cusip = col("cusip")
-    i_isin = col("isin")
-    i_sedol = col("sedol")
-    # Currency column = fund's reporting currency.  Market Currency =
-    # holding's local trading currency.
-    i_report_ccy = col("currency")
-    i_market_ccy = col("market currency", "exchange rate currency")
-    i_cty = col("location", "country")
-    i_exch = col("exchange")
-    i_fx = col("fx rate")
-    i_coupon = col("coupon (%)", "coupon")
-    i_maturity = col("maturity")
-    i_duration = col("duration")
-    i_modd = col("mod. duration", "mod duration", "modified duration")
-    i_ytm = col("ytm (%)", "ytm")
-    i_ytc = col("yield to call (%)", "yield to call")
-    i_ytw = col("yield to worst (%)", "yield to worst")
-    i_realdur = col("real duration")
-    i_realytm = col("real ytm (%)", "real ytm")
-    i_accrual = col("accrual date")
-    i_effective = col("effective date")
-
-    def cell(idx: int, row: list[str]) -> str | None:
-        if 0 <= idx < len(row):
-            return _clean(row[idx])
-        return None
+    def _drop(cols: list[str], *names: str) -> list[str]:
+        dl = {n.lower() for n in names}
+        return [c for c in cols if c.lower() not in dl]
 
     out: list[Holding] = []
-    for r in rows[1:]:
-        if not r or all(not c.strip() for c in r):
-            continue
-        if i_name < 0 or i_name >= len(r):
-            continue
-        # Pad / trim to header length so raw dict has all keys.
-        rr = list(r) + [""] * max(0, n_cols - len(r))
-        rr = rr[:n_cols]
-        raw = {h: rr[i] for i, h in enumerate(header_raw)}
 
-        name = _clean(rr[i_name])
+    def _emit(raw: dict[str, str]) -> None:
+        raw_lc = {h.lower(): v for h, v in raw.items()}
+        name = _get(raw_lc, "name")
         if not name:
-            continue
-        mv_local = _to_float(rr[i_mv]) if 0 <= i_mv else None
-        wt = _to_float(rr[i_wt]) if 0 <= i_wt else None
+            return
+        mv_local = _getf(
+            raw_lc, "market value", "market value (usd)", "market value (gbp)"
+        )
+        wt = _getf(raw_lc, "weight (%)", "weight(%)", "weight")
         if mv_local is None and wt is None:
-            continue
+            return
+
+        # Currency = fund's reporting currency.  Market Currency = holding's
+        # local trading currency.  Treat a bare dash as absent.
+        def _ccy(*names: str) -> str | None:
+            v = _get(raw_lc, *names)
+            return None if v in ("-", "—") else v
 
         report_ccy = (
-            cell(i_report_ccy, rr) or parent_currency or ""
+            _ccy("currency") or parent_currency or ""
         ).upper() or parent_currency
-        market_ccy = (cell(i_market_ccy, rr) or report_ccy or "").upper()
+        market_ccy = (
+            _ccy("market currency", "exchange rate currency") or report_ccy or ""
+        ).upper()
 
-        ticker = cell(i_tkr, rr)
+        ticker = _get(raw_lc, "ticker")
         if ticker == "-":
             ticker = None
 
-        shares = (_to_float(rr[i_qty]) if 0 <= i_qty else None) or (
-            _to_float(rr[i_par]) if 0 <= i_par else None
-        )
-
+        isin = _get(raw_lc, "isin")
+        cusip = _get(raw_lc, "cusip")
+        shares = _getf(raw_lc, "quantity", "shares") or _getf(raw_lc, "par value")
         mv_usd = (
             float(mv_local) if mv_local is not None and report_ccy == "USD" else 0.0
         )
@@ -363,42 +339,76 @@ def _parse_csv_holdings(
                 parent_portfolio_id=parent_portfolio_id,
                 parent_ticker=parent_ticker,
                 portfolio=portfolio,
-                holding_id=cell(i_isin, rr) or cell(i_cusip, rr) or ticker,
+                holding_id=isin or cusip or ticker,
                 holding_ticker=ticker,
                 holding_name=name,
-                holding_type=cell(i_ac, rr) or "Other",
-                holding_isin=cell(i_isin, rr),
-                holding_cusip=cell(i_cusip, rr),
-                holding_sedol=cell(i_sedol, rr),
-                sector=cell(i_sec, rr),
-                country=cell(i_cty, rr),
-                exchange=cell(i_exch, rr),
+                holding_type=_get(raw_lc, "asset class") or "Other",
+                holding_isin=isin,
+                holding_cusip=cusip,
+                holding_sedol=_get(raw_lc, "sedol"),
+                sector=_get(raw_lc, "sector"),
+                country=_get(raw_lc, "location", "country"),
+                exchange=_get(raw_lc, "exchange"),
                 currency=market_ccy,
                 report_currency=report_ccy,
                 shares_or_par=shares,
-                price=_to_float(rr[i_price]) if 0 <= i_price else None,
+                price=_getf(raw_lc, "price"),
                 market_value_local=mv_local or 0.0,
-                notional_value=_to_float(rr[i_notional]) if 0 <= i_notional else None,
+                notional_value=_getf(raw_lc, "notional value"),
                 market_value_usd=mv_usd,
                 weight_pct=wt or 0.0,
-                fx_rate=_to_float(rr[i_fx]) if 0 <= i_fx else None,
-                coupon_pct=_to_float(rr[i_coupon]) if 0 <= i_coupon else None,
-                maturity_date=cell(i_maturity, rr),
-                duration=_to_float(rr[i_duration]) if 0 <= i_duration else None,
-                mod_duration=_to_float(rr[i_modd]) if 0 <= i_modd else None,
-                ytm_pct=_to_float(rr[i_ytm]) if 0 <= i_ytm else None,
-                yield_to_call_pct=_to_float(rr[i_ytc]) if 0 <= i_ytc else None,
-                yield_to_worst_pct=_to_float(rr[i_ytw]) if 0 <= i_ytw else None,
-                real_duration=_to_float(rr[i_realdur]) if 0 <= i_realdur else None,
-                real_ytm_pct=_to_float(rr[i_realytm]) if 0 <= i_realytm else None,
-                accrual_date=cell(i_accrual, rr),
-                effective_date=cell(i_effective, rr),
+                fx_rate=_getf(raw_lc, "fx rate"),
+                coupon_pct=_getf(raw_lc, "coupon (%)", "coupon"),
+                maturity_date=_get(raw_lc, "maturity"),
+                duration=_getf(raw_lc, "duration"),
+                mod_duration=_getf(
+                    raw_lc, "mod. duration", "mod duration", "modified duration"
+                ),
+                ytm_pct=_getf(raw_lc, "ytm (%)", "ytm"),
+                yield_to_call_pct=_getf(raw_lc, "yield to call (%)", "yield to call"),
+                yield_to_worst_pct=_getf(raw_lc, "yield to worst (%)", "yield to worst"),
+                real_duration=_getf(raw_lc, "real duration"),
+                real_ytm_pct=_getf(raw_lc, "real ytm (%)", "real ytm"),
+                accrual_date=_get(raw_lc, "accrual date"),
+                effective_date=_get(raw_lc, "effective date"),
                 as_of_date=as_of_date,
                 raw=raw,
             )
         )
         if len(out) % 5000 == 0:
             log.info("    ... %d rows parsed", len(out))
+
+    bounds = header_idxs + [len(lines)]
+    for s, hi in enumerate(header_idxs):
+        block = "\n".join(lines[hi : bounds[s + 1]])
+        rows = list(csv.reader(io.StringIO(block)))
+        if len(rows) < 2:
+            continue
+        header_raw = [h.strip().strip('"') for h in rows[0]]
+        n_cols = len(header_raw)
+
+        # Within a section, look-through bond / cash legs use a REDUCED
+        # layout that omits the leading ``Ticker`` and/or the ``Market
+        # Currency`` column.  Map each row to the header variant whose width
+        # it matches so fields stay aligned (no positional shifting).
+        headers_by_len: dict[int, list[str]] = {n_cols: header_raw}
+        for variant in (
+            _drop(header_raw, "ticker"),
+            _drop(header_raw, "ticker", "market currency"),
+        ):
+            headers_by_len.setdefault(len(variant), variant)
+
+        for r in rows[1:]:
+            if not r or all(not c.strip() for c in r):
+                continue
+            chosen = headers_by_len.get(len(r))
+            if chosen is None:
+                # Unknown width — best-effort pad/trim to the section header.
+                cells = (list(r) + [""] * max(0, n_cols - len(r)))[:n_cols]
+                chosen = header_raw
+            else:
+                cells = list(r)
+            _emit({h: cells[i] for i, h in enumerate(chosen)})
     return out
 
 

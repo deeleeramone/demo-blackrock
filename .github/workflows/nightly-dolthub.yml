@@ -1,0 +1,63 @@
+name: Nightly DoltHub refresh
+
+on:
+  schedule:
+    - cron: '30 7 * * *'   # 07:30 UTC ≈ 02:30 ET (EST) / 03:30 ET (EDT) — adjust as desired
+  workflow_dispatch: {}     # allow manual runs from the Actions tab
+
+concurrency:
+  group: dolthub-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      DOLT_REPO: deeleeramone/blackrock-public
+      DOLTHUB_USER: deeleeramone
+      BLACKROCK_DB_DIR: ${{ github.workspace }}/.db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Dolt
+        run: |
+          sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
+          dolt version
+
+      - name: Configure Dolt commit identity
+        run: |
+          dolt config --global --add user.name  "blackrock-nightly-bot"
+          dolt config --global --add user.email "85772166+deeleeramone@users.noreply.github.com"
+
+      - name: Clone target DoltHub repo
+        run: dolt clone "$DOLT_REPO" dolt-repo
+
+      - name: Seed SQLite from currently-published data
+        run: python scripts/seed_sqlite_from_dolt.py --dolt-dir dolt-repo
+
+      - name: Async ingest (fetch + rebuild look-through views)
+        run: python -m openbb_blackrock.ingest_async --portfolio iShares --concurrency 12 --verbose
+
+      - name: Load into Dolt, commit, and push
+        env:
+          DOLT_REMOTE_PASSWORD: ${{ secrets.DOLTHUB_TOKEN }}
+        run: |
+          if [ -z "$DOLT_REMOTE_PASSWORD" ]; then
+            echo "::error::DOLTHUB_TOKEN secret is not set"; exit 1
+          fi
+          python scripts/sync_to_dolthub.py \
+            --sqlite "$BLACKROCK_DB_DIR/holdings.db" \
+            --dolt-dir dolt-repo \
+            --user "$DOLTHUB_USER" \
+            --message "Nightly iShares refresh ($(date -u +%Y-%m-%d))"
