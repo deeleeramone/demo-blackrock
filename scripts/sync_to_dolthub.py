@@ -1,26 +1,10 @@
 """Load the freshly-ingested SQLite DB into the Dolt working set, commit,
-and push to DoltHub.
-
-Mirrors the one-time manual transfer:
-  * recreate the MySQL-dialect schema (dolt/schema.sql),
-  * export every table to CSV (dropping the bulky verbatim raw_json columns),
-  * import with ``dolt table import -u`` into the recreated tables,
-  * commit (skipping empty diffs) and push.
-
-Run from the repo root, with a dolt clone of the target repo already present
-(the workflow clones it first).
-
-  python scripts/sync_to_dolthub.py \
-      --sqlite ~/.openbb-blackrock/holdings.db \
-      --dolt-dir /tmp/blackrock-public \
-      --message "Nightly iShares refresh"
-"""
+and push to DoltHub."""
 
 from __future__ import annotations
 
 import argparse
 import csv
-import os
 import sqlite3
 import subprocess
 import sys
@@ -48,11 +32,7 @@ def _run(cmd: list[str], cwd: str | None = None) -> None:
 
 
 def _export_csv(conn: sqlite3.Connection, table: str, dest: Path) -> int:
-    cols = [
-        r[1]
-        for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
-        if r[1] not in DROP_COLUMNS
-    ]
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall() if r[1] not in DROP_COLUMNS]
     col_sql = ",".join(f'"{c}"' for c in cols)
     cur = conn.execute(f"SELECT {col_sql} FROM {table}")
     n = 0
@@ -75,9 +55,10 @@ def main() -> int:
     ap.add_argument("--branch", default="main")
     ap.add_argument(
         "--user",
-        default=os.environ.get("DOLTHUB_USER"),
-        help="DoltHub username for token (Basic Auth) push; "
-        "the token itself comes from the DOLT_REMOTE_PASSWORD env var.",
+        default=None,
+        help="Only for Dolt SQL Server remotes (uses --user + "
+        "DOLT_REMOTE_PASSWORD). Leave unset for DoltHub, which authenticates "
+        "via the imported JWK credential.",
     )
     ap.add_argument("--no-push", action="store_true", help="Build + commit only")
     args = ap.parse_args()
@@ -119,10 +100,6 @@ def main() -> int:
         print("nothing to commit (no data changes) — skipping push", flush=True)
         return 0
     if not args.no_push:
-        # Token auth: dolt reads the token from $DOLT_REMOTE_PASSWORD and the
-        # username from --user, sent to DoltHub as HTTP Basic Auth.
-        if not os.environ.get("DOLT_REMOTE_PASSWORD"):
-            sys.exit("DOLT_REMOTE_PASSWORD (DoltHub API token) is not set")
         push = ["dolt", "push"]
         if args.user:
             push += ["--user", args.user]

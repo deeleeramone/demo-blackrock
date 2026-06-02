@@ -15,7 +15,6 @@ jobs:
     timeout-minutes: 120
     env:
       DOLT_REPO: deeleeramone/blackrock-public
-      DOLTHUB_USER: deeleeramone
       BLACKROCK_DB_DIR: ${{ github.workspace }}/.db
 
     steps:
@@ -35,10 +34,20 @@ jobs:
           sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
           dolt version
 
-      - name: Configure Dolt commit identity
+      - name: Configure Dolt identity and DoltHub credential
+        # DoltHub push authenticates with a JWK credential (`dolt creds`), NOT
+        # an API token. Create one with `dolt creds new`, authorize it at
+        # https://www.dolthub.com/settings/credentials, and paste the contents
+        # of ~/.dolt/creds/<key>.jwk into the DOLTHUB_CREDENTIAL secret.
+        env:
+          DOLTHUB_CREDENTIAL: ${{ secrets.DOLTHUB_CREDENTIAL }}
         run: |
+          if [ -z "$DOLTHUB_CREDENTIAL" ]; then
+            echo "::error::DOLTHUB_CREDENTIAL secret is not set"; exit 1
+          fi
           dolt config --global --add user.name  "blackrock-nightly-bot"
           dolt config --global --add user.email "85772166+deeleeramone@users.noreply.github.com"
+          printf '%s' "$DOLTHUB_CREDENTIAL" | dolt creds import
 
       - name: Clone target DoltHub repo
         run: dolt clone "$DOLT_REPO" dolt-repo
@@ -50,14 +59,8 @@ jobs:
         run: python -m openbb_blackrock.ingest_async --portfolio iShares --concurrency 12 --verbose
 
       - name: Load into Dolt, commit, and push
-        env:
-          DOLT_REMOTE_PASSWORD: ${{ secrets.DOLTHUB_TOKEN }}
         run: |
-          if [ -z "$DOLT_REMOTE_PASSWORD" ]; then
-            echo "::error::DOLTHUB_TOKEN secret is not set"; exit 1
-          fi
           python scripts/sync_to_dolthub.py \
             --sqlite "$BLACKROCK_DB_DIR/holdings.db" \
             --dolt-dir dolt-repo \
-            --user "$DOLTHUB_USER" \
             --message "Nightly iShares refresh ($(date -u +%Y-%m-%d))"
