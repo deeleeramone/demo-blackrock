@@ -3,31 +3,22 @@ set -e
 
 DB_DIR="${BLACKROCK_DB_DIR:-/data}"
 DB_FILE="$DB_DIR/holdings.db"
+CLONE_DIR="$DB_DIR/dolt-clone"
+REPO="${DOLT_REPO:-deeleeramone/blackrock-public}"
 mkdir -p "$DB_DIR"
 
+# Build the local SQLite DB from the published DoltHub dataset instead of
+# generating it from BlackRock (~60 min). The nightly GitHub Action is the
+# producer (BlackRock -> DoltHub); this container is a consumer.
 if [ ! -f "$DB_FILE" ]; then
-    echo "Database not found. Running initial ingestion (this will take a while) ..."
-    python -m openbb_blackrock.ingest --portfolio iShares --verbose
-    echo "Ingestion complete."
+    echo "Database not found. Materializing from DoltHub ($REPO) ..."
+    python /app/scripts/materialize_from_dolthub.py --repo "$REPO" --dolt-dir "$CLONE_DIR"
+    echo "Materialization complete."
 fi
 
-NAV_COUNT=$(python -c "
-import sqlite3, sys
-try:
-    c = sqlite3.connect('$DB_FILE')
-    print(c.execute('SELECT COUNT(*) FROM nav_history').fetchone()[0])
-except Exception:
-    print(0)
-" 2>/dev/null || echo 0)
-
-if [ "$NAV_COUNT" = "0" ]; then
-    echo "NAV history empty. Running NAV history + distributions ingestion ..."
-    python -m openbb_blackrock.ingest --nav-history --verbose
-    echo "NAV history ingestion complete."
-fi
-
-# Nightly re-ingest at 2:00 AM (holdings + nav history)
-echo "0 2 * * * cd /app && BLACKROCK_DB_DIR=${DB_DIR} python -m openbb_blackrock.ingest --portfolio iShares --nav-history --verbose >> /var/log/ingest.log 2>&1" | crontab -
+# Nightly: pull the latest DoltHub commit and rebuild the local tables in
+# place. Scheduled after the publishing Action (07:30 UTC); adjust as needed.
+echo "0 9 * * * cd /app && BLACKROCK_DB_DIR=${DB_DIR} python /app/scripts/materialize_from_dolthub.py --repo ${REPO} --dolt-dir ${CLONE_DIR} >> /var/log/materialize.log 2>&1" | crontab -
 cron
 
 exec uvicorn openbb_blackrock.portfolio_api:app \
