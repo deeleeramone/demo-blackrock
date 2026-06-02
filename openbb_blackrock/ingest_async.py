@@ -32,11 +32,14 @@ from .db import (
     seed_fx_rates,
     upsert_fund,
 )
+from .documents import _extract_fund_documents
+from .db import replace_documents_for_fund
 from .holdings import (
     _build_ishares_holdings_url,
     _parse_csv_holdings,
     _parse_ishares_csv_as_of_date,
 )
+from .key_facts import KEY_FACT_COLUMNS, parse_key_facts
 from .ingest import (
     PORTFOLIOS,
     _compound_num,
@@ -63,7 +66,10 @@ async def _fetch(
     *,
     referer: str | None = None,
     retries: int = 4,
-) -> str | None:
+) -> tuple[str | None, int | None]:
+    """Return ``(body, status)``. ``status`` is the last HTTP code seen (or
+    ``None`` on a network error) so callers can tell an expected 4xx
+    'no such document' apart from a transient failure."""
     headers = {"Referer": referer} if referer else None
     delay = 3.0
     async with sem:
@@ -73,31 +79,54 @@ async def _fetch(
             except httpx.HTTPError as exc:
                 if attempt == retries - 1:
                     log.warning("fetch failed %s: %s", url, exc)
-                    return None
+                    return None, None
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30.0)
                 continue
             if r.status_code == 200 and r.text:
-                return r.text
+                return r.text, 200
+            # 4xx (except 429 rate-limit) is a permanent client error — the
+            # fund simply doesn't serve this document. Don't waste retries;
+            # return the status so the caller can classify it.
+            if 400 <= r.status_code < 500 and r.status_code != 429:
+                return None, r.status_code
+            # 429 / 5xx are transient — back off and retry.
             if attempt == retries - 1:
-                return None
+                log.warning(
+                    "fetch %s -> HTTP %d (gave up after %d attempts)",
+                    url,
+                    r.status_code,
+                    retries,
+                )
+                return None, r.status_code
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
-    return None
+    return None, None
 
 
 async def _gather(refs, concurrency):
-    """Concurrently fetch holdings CSV + NAV workbook for every fund."""
+    """Concurrently fetch, per fund: holdings CSV + NAV workbook + product
+    page (Key Facts and document links come from the same page download)."""
     sem = asyncio.Semaphore(concurrency)
     done = {"n": 0}
     total = len(refs)
 
-    async with httpx.AsyncClient(
-        headers=_HDRS, follow_redirects=True, timeout=60
-    ) as client:
+    async with httpx.AsyncClient(headers=_HDRS, follow_redirects=True, timeout=60) as client:
+
+        async def page(ref):
+            # FundRef.product_page_url is already the absolute ishares URL.
+            # _extract_fund_documents also surfaces the metal-trust bar-list
+            # PDF as a "Bar List" document entry.
+            body, _status = await _fetch(client, ref.product_page_url, sem)
+            page_ok = bool(body)
+            kf, docs = {}, {}
+            if page_ok:
+                kf = parse_key_facts(body)
+                docs = _extract_fund_documents(body)
+            return kf, docs, page_ok
 
         async def holdings(ref):
-            body = await _fetch(
+            body, status = await _fetch(
                 client,
                 _build_ishares_holdings_url(ref.portfolio_id, None),
                 sem,
@@ -108,13 +137,11 @@ async def _gather(refs, concurrency):
             hs = []
             if csv_ok:
                 as_of = _parse_ishares_csv_as_of_date(body) or date.today()
-                hs = _parse_csv_holdings(
-                    body, ref.portfolio_id, ref.ticker, ref.portfolio, ref.currency, as_of
-                )
-            return hs, csv_ok
+                hs = _parse_csv_holdings(body, ref.portfolio_id, ref.ticker, ref.portfolio, ref.currency, as_of)
+            return hs, csv_ok, status
 
         async def workbook(ref):
-            body = await _fetch(
+            body, _status = await _fetch(
                 client,
                 navh._build_fund_download_url(ref.portfolio_id),
                 sem,
@@ -133,19 +160,22 @@ async def _gather(refs, concurrency):
             return nav, dist, wb_ok
 
         async def one(ref):
-            (hs, csv_ok), (nav, dist, wb_ok) = await asyncio.gather(
-                holdings(ref), workbook(ref)
+            (hs, csv_ok, h_status), (nav, dist, wb_ok), (kf, docs, page_ok) = (
+                await asyncio.gather(holdings(ref), workbook(ref), page(ref))
             )
             done["n"] += 1
             if done["n"] % 25 == 0 or done["n"] == total:
                 log.info("  fetched %d/%d funds", done["n"], total)
-            return ref, hs, csv_ok, nav, dist, wb_ok
+            return ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, page_ok
 
         return await asyncio.gather(*(one(r) for r in refs))
 
 
-def _upsert_fund_from_rec(conn, ref, rec, isin, hs) -> None:
-    """Mirror of ingest.ingest_portfolio's fund upsert (verbatim field map)."""
+def _upsert_fund_from_rec(conn, ref, rec, isin, hs, key_facts=None) -> None:
+    """Mirror of ingest.ingest_portfolio's fund upsert (verbatim field map),
+    plus the product-page Key Facts. ``key_facts`` is the parsed page metrics;
+    when empty (page fetch failed) the prior values are read back so a failure
+    never blanks them."""
     aum_obj = rec.get("totalNetAssets") or rec.get("totalNetAssetsFund")
     total_aum_usd = None
     if isinstance(aum_obj, dict):
@@ -170,8 +200,7 @@ def _upsert_fund_from_rec(conn, ref, rec, isin, hs) -> None:
             (ref.portfolio_id,),
         ).fetchone()
         holdings_as_of = prior[0] if prior else None
-    upsert_fund(
-        conn,
+    fields = dict(
         portfolio_id=ref.portfolio_id,
         ticker=ref.ticker,
         isin=isin,
@@ -212,6 +241,18 @@ def _upsert_fund_from_rec(conn, ref, rec, isin, hs) -> None:
         holdings_as_of_date=holdings_as_of,
         total_aum_usd=total_aum_usd,
     )
+    # Key Facts (product page) override the thinner screener values
+    # (premium/discount, yields) and fill the new columns. On a failed page
+    # fetch, read prior values back so a failure never blanks them.
+    kf = key_facts
+    if not kf:
+        prior = conn.execute(
+            f"SELECT {','.join(KEY_FACT_COLUMNS)} FROM funds WHERE portfolio_id = ?",
+            (ref.portfolio_id,),
+        ).fetchone()
+        kf = dict(zip(KEY_FACT_COLUMNS, prior)) if prior else {}
+    fields.update({k: v for k, v in kf.items() if v is not None})
+    upsert_fund(conn, **fields)
 
 
 def ingest_portfolio_async(
@@ -230,26 +271,40 @@ def ingest_portfolio_async(
     tk = {t.upper() for t in tickers} if tickers else None
     log.info("=== async ingest: %s (concurrency=%d) ===", portfolio, concurrency)
     with httpx.Client(headers=_HDRS, follow_redirects=True, timeout=60) as sc:
-        items = list(
-            _iter_funds_for_portfolio(portfolio, sc, tickers=tk, limit=limit)
-        )
+        items = list(_iter_funds_for_portfolio(portfolio, sc, tickers=tk, limit=limit))
     refs = [it[0] for it in items]
     rec_by_pid = {it[0].portfolio_id: (it[1], it[2]) for it in items}
     log.info("discovered %d funds; fetching concurrently ...", len(refs))
 
     results = asyncio.run(_gather(refs, concurrency))
 
-    holdings_written = nav_written = dist_written = 0
-    holdings_retained = nav_retained = 0
-    for ref, hs, csv_ok, nav, dist, wb_ok in results:
+    holdings_written = nav_written = dist_written = docs_written = 0
+    holdings_retained = nav_retained = holdings_no_doc = key_facts_funds = 0
+    for (
+        ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, page_ok
+    ) in results:
         rec, isin = rec_by_pid[ref.portfolio_id]
         tk = ref.ticker or ref.portfolio_id
-        _upsert_fund_from_rec(conn, ref, rec, isin, hs)
+        # Key Facts come from the product page; pass them (or {} to preserve
+        # prior values when the page fetch failed) into the fund upsert.
+        _upsert_fund_from_rec(conn, ref, rec, isin, hs, key_facts=kf)
+        if kf:
+            key_facts_funds += 1
 
-        # NEVER let a failed/empty fetch wipe a fund — only replace when we
-        # actually have data; otherwise keep the prior rows untouched.
+        # Documents are parsed from the same page download — only refresh when
+        # the page actually loaded, so a failure retains prior document rows.
+        if page_ok and ref.ticker:
+            docs_written += replace_documents_for_fund(
+                conn, ref.portfolio_id, ref.ticker, docs
+            )
+        elif not page_ok:
+            log.warning("product page fetch FAILED for %s — key facts/docs RETAINED", tk)
+
         if hs:
             holdings_written += replace_holdings_for_fund(conn, ref.portfolio_id, hs)
+        elif h_status is not None and 400 <= h_status < 500 and h_status != 429:
+            holdings_no_doc += 1
+            log.info("%s has no holdings document (HTTP %d) — expected", tk, h_status)
         else:
             holdings_retained += 1
             log.warning(
@@ -263,9 +318,6 @@ def ingest_portfolio_async(
         elif not wb_ok:
             nav_retained += 1
             log.warning("nav workbook fetch FAILED for %s — RETAINED prior rows", tk)
-        # Distributions: only refresh when the workbook actually downloaded,
-        # so a funds-with-zero-distributions case can still clear stale rows,
-        # but a fetch failure can't.
         if wb_ok:
             dist_written += replace_distributions_for_fund(conn, ref.portfolio_id, dist)
 
@@ -287,18 +339,12 @@ def ingest_portfolio_async(
             SELECT parent_portfolio_id, MAX(as_of_date)
             FROM holdings_lookthrough GROUP BY parent_portfolio_id)"""
     )
-    docs_written = 0
-    if portfolio == "iShares":
-        try:
-            from .documents import populate_us_documents
 
-            docs_written = populate_us_documents(conn)
-        except Exception as exc:
-            log.warning("document ingestion failed: %s", exc)
     result = {
         "portfolio": portfolio,
         "funds": len(refs),
         "holdings_written": holdings_written,
+        "holdings_no_document": holdings_no_doc,
         "holdings_retained_on_failure": holdings_retained,
         "nav_rows_written": nav_written,
         "nav_retained_on_failure": nav_retained,
@@ -306,6 +352,7 @@ def ingest_portfolio_async(
         "fund_links": links,
         "lookthrough_rows": lt,
         "documents_written": docs_written,
+        "funds_with_key_facts": key_facts_funds,
     }
     log.info("done: %s", result)
     return result

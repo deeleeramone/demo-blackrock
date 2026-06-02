@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from html import unescape as _html_unescape
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
@@ -32,6 +33,22 @@ _PDF_CACHE_DIR = DB_PATH.parent / "pdf_cache"
 _PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _HDRS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+
+# Physical-metal trusts (SLV, IAU, IAUM) link a custodian bar-list PDF on a
+# different host; surface it as a document choice rather than a data table.
+_BAR_LIST_RE = re.compile(
+    r"material=[A-Za-z]*[Bb]ar[Ll]ist;url=(https://[^}{\"'\s]+\.pdf)"
+)
+
+
+def _extract_bar_list_url(html: str) -> str | None:
+    urls = _BAR_LIST_RE.findall(_html_unescape(html))
+    if not urls:
+        return None
+    for u in urls:  # prefer the public, unauthenticated mirror
+        if "publicUnauthenticated" in u or "emea-markets" in u:
+            return u
+    return urls[0]
 
 
 def _extract_fund_documents(html: str) -> dict[str, dict]:
@@ -72,6 +89,10 @@ def _extract_fund_documents(html: str) -> dict[str, dict]:
         if slug in docs:
             slug = f"{slug}-{len(docs)}"
         docs[slug] = {"label": label, "url": url}
+
+    bar_url = _extract_bar_list_url(html)
+    if bar_url:
+        docs["bar-list"] = {"label": "Bar List", "url": bar_url}
     return docs
 
 
