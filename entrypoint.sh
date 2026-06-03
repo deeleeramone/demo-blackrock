@@ -18,7 +18,13 @@ fi
 
 # Nightly: pull the latest DoltHub commit and rebuild the local tables in
 # place. Scheduled after the publishing Action (07:30 UTC); adjust as needed.
-echo "0 9 * * * cd /app && BLACKROCK_DB_DIR=${DB_DIR} python /app/scripts/materialize_from_dolthub.py --repo ${REPO} --dolt-dir ${CLONE_DIR} >> /var/log/materialize.log 2>&1" | crontab -
+# NOTE: cron runs with a minimal PATH (/usr/bin:/bin) that excludes
+# /usr/local/bin, where the slim image keeps python AND dolt — so the PATH
+# line below is required or the job dies with "python: not found".
+{
+    echo "PATH=/usr/local/bin:/usr/bin:/bin"
+    echo "0 9 * * * cd /app && BLACKROCK_DB_DIR=${DB_DIR} python /app/scripts/materialize_from_dolthub.py --repo ${REPO} --dolt-dir ${CLONE_DIR} >> /var/log/materialize.log 2>&1"
+} | crontab -
 cron
 
 exec uvicorn openbb_blackrock.portfolio_api:app \
