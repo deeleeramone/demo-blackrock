@@ -32,8 +32,13 @@ from .db import (
     seed_fx_rates,
     upsert_fund,
 )
+from .chart_data import pd_ajax_url, parse_performance, parse_premium_discount
 from .documents import _extract_fund_documents
-from .db import replace_documents_for_fund
+from .db import (
+    replace_documents_for_fund,
+    upsert_performance,
+    upsert_premium_discount,
+)
 from .holdings import (
     _build_ishares_holdings_url,
     _parse_csv_holdings,
@@ -115,15 +120,24 @@ async def _gather(refs, concurrency):
 
         async def page(ref):
             # FundRef.product_page_url is already the absolute ishares URL.
-            # _extract_fund_documents also surfaces the metal-trust bar-list
-            # PDF as a "Bar List" document entry.
+            # The product page carries key facts, document links (incl. the
+            # metal-trust bar list), AND the performance/benchmark chart data.
             body, _status = await _fetch(client, ref.product_page_url, sem)
             page_ok = bool(body)
-            kf, docs = {}, {}
+            kf, docs, perf = {}, {}, {}
             if page_ok:
                 kf = parse_key_facts(body)
                 docs = _extract_fund_documents(body)
-            return kf, docs, page_ok
+                perf = parse_performance(body)
+            return kf, docs, perf, page_ok
+
+        async def pd_chart(ref):
+            # Premium/discount daily series — a separate ajax download.
+            url = pd_ajax_url(ref.product_page_url)
+            if not url:
+                return []
+            body, _status = await _fetch(client, url, sem, referer=ref.product_page_url)
+            return parse_premium_discount(body) if body else []
 
         async def holdings(ref):
             body, status = await _fetch(
@@ -160,13 +174,17 @@ async def _gather(refs, concurrency):
             return nav, dist, wb_ok
 
         async def one(ref):
-            (hs, csv_ok, h_status), (nav, dist, wb_ok), (kf, docs, page_ok) = (
-                await asyncio.gather(holdings(ref), workbook(ref), page(ref))
+            (hs, csv_ok, h_status), (nav, dist, wb_ok), (kf, docs, perf, page_ok), pd = (
+                await asyncio.gather(
+                    holdings(ref), workbook(ref), page(ref), pd_chart(ref)
+                )
             )
             done["n"] += 1
             if done["n"] % 25 == 0 or done["n"] == total:
                 log.info("  fetched %d/%d funds", done["n"], total)
-            return ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, page_ok
+            return (
+                ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, perf, pd, page_ok
+            )
 
         return await asyncio.gather(*(one(r) for r in refs))
 
@@ -280,11 +298,21 @@ def ingest_portfolio_async(
 
     holdings_written = nav_written = dist_written = docs_written = 0
     holdings_retained = nav_retained = holdings_no_doc = key_facts_funds = 0
+    pd_written = perf_written = 0
     for (
-        ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, page_ok
+        ref, hs, csv_ok, h_status, nav, dist, wb_ok, kf, docs, perf, pd, page_ok
     ) in results:
         rec, isin = rec_by_pid[ref.portfolio_id]
         tk = ref.ticker or ref.portfolio_id
+
+        # Chart-data time series (upsert, so they accumulate beyond the rolling
+        # window iShares serves; a failed fetch simply adds nothing).
+        if pd:
+            pd_written += upsert_premium_discount(conn, ref.portfolio_id, pd)
+        if perf and (perf.get("fund") or perf.get("benchmark")):
+            perf_written += upsert_performance(
+                conn, ref.portfolio_id, perf.get("fund", []), perf.get("benchmark", [])
+            )
         # Key Facts come from the product page; pass them (or {} to preserve
         # prior values when the page fetch failed) into the fund upsert.
         _upsert_fund_from_rec(conn, ref, rec, isin, hs, key_facts=kf)
@@ -353,6 +381,8 @@ def ingest_portfolio_async(
         "lookthrough_rows": lt,
         "documents_written": docs_written,
         "funds_with_key_facts": key_facts_funds,
+        "premium_discount_points": pd_written,
+        "performance_points": perf_written,
     }
     log.info("done: %s", result)
     return result

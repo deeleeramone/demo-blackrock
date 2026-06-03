@@ -25,6 +25,8 @@ TABLES = [
     "distributions",
     "fund_documents",
     "fund_links",
+    "premium_discount_history",
+    "performance_history",
 ]
 
 # ``holdings`` ACCUMULATES: each pull appends the incoming snapshot(s) by

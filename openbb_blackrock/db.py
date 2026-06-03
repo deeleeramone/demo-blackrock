@@ -280,7 +280,70 @@ _SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_fund_documents_ticker ON fund_documents(ticker)",
+    """
+    CREATE TABLE IF NOT EXISTS premium_discount_history (
+        portfolio_id          TEXT NOT NULL,
+        as_of_date            TEXT NOT NULL,
+        premium_discount_pct  REAL,
+        PRIMARY KEY (portfolio_id, as_of_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_pdh_date ON premium_discount_history(as_of_date)",
+    """
+    CREATE TABLE IF NOT EXISTS performance_history (
+        portfolio_id     TEXT NOT NULL,
+        as_of_date       TEXT NOT NULL,
+        fund_value       REAL,   -- growth of a hypothetical $10,000
+        benchmark_value  REAL,
+        PRIMARY KEY (portfolio_id, as_of_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_perf_date ON performance_history(as_of_date)",
 ]
+
+
+def upsert_premium_discount(
+    conn: sqlite3.Connection, portfolio_id: str, rows: Iterable[tuple]
+) -> int:
+    """Upsert daily premium/discount points ``[(as_of_date, pct), ...]``.
+    Upsert (not replace) so the series accumulates beyond the rolling window
+    iShares serves."""
+    rows = list(rows)
+    if rows:
+        conn.executemany(
+            """INSERT INTO premium_discount_history
+                   (portfolio_id, as_of_date, premium_discount_pct)
+               VALUES (?, ?, ?)
+               ON CONFLICT(portfolio_id, as_of_date)
+               DO UPDATE SET premium_discount_pct = excluded.premium_discount_pct""",
+            [(portfolio_id, d, v) for d, v in rows],
+        )
+    return len(rows)
+
+
+def upsert_performance(
+    conn: sqlite3.Connection,
+    portfolio_id: str,
+    fund_rows: Iterable[tuple],
+    benchmark_rows: Iterable[tuple],
+) -> int:
+    """Upsert fund + benchmark growth series, merged by date."""
+    merged: dict[str, list] = {}
+    for d, v in fund_rows:
+        merged.setdefault(d, [None, None])[0] = v
+    for d, v in benchmark_rows:
+        merged.setdefault(d, [None, None])[1] = v
+    if merged:
+        conn.executemany(
+            """INSERT INTO performance_history
+                   (portfolio_id, as_of_date, fund_value, benchmark_value)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(portfolio_id, as_of_date) DO UPDATE SET
+                   fund_value = excluded.fund_value,
+                   benchmark_value = excluded.benchmark_value""",
+            [(portfolio_id, d, fb[0], fb[1]) for d, fb in merged.items()],
+        )
+    return len(merged)
 
 
 # ---------------------------------------------------------------------------

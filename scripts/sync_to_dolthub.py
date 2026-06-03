@@ -21,6 +21,8 @@ TABLES = [
     "distributions",
     "fund_documents",
     "fund_links",
+    "premium_discount_history",
+    "performance_history",
     # fx_rates is empty in the current pipeline; skip unless populated.
 ]
 DROP_COLUMNS = {"raw_json"}

@@ -31,6 +31,8 @@ TABLES = [
     "distributions",
     "fund_documents",
     "fund_links",
+    "premium_discount_history",
+    "performance_history",
 ]
 BATCH = 10000
 

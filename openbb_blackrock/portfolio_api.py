@@ -1641,8 +1641,9 @@ def _fetch_premium_discount(portfolio_id: str, pd_url: str) -> dict | None:
     dates = [int(x) for x in date_m.group(1).split(",")]
 
     val_m = re.search(
-        r'"name":"premiumDiscountChartData"[^[]+\[([^\]]+)\]',
+        r'"name":"premiumDiscountChartData".*?,"value":\[([^\]]+)\]',
         decoded[pd_idx : pd_idx + 50000],
+        re.DOTALL,
     )
     if not val_m:
         return None
@@ -1772,6 +1773,45 @@ def _date_to_ymd(d: "date") -> int:
     return d.year * 10000 + d.month * 100 + d.day
 
 
+def _pd_history_from_db(portfolio_id: str) -> list[tuple]:
+    """Daily premium/discount [(iso_date, pct)] from the ingested DB."""
+    rows = get_conn().execute(
+        "SELECT as_of_date, premium_discount_pct FROM premium_discount_history "
+        "WHERE portfolio_id = ? AND premium_discount_pct IS NOT NULL "
+        "ORDER BY as_of_date",
+        (portfolio_id,),
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def _perf_chart_from_db(portfolio_id: str, bm_name: str | None) -> dict | None:
+    """Fund + benchmark growth series from the ingested DB, in the shape the
+    chart endpoints expect (asOfDate as YYYYMMDD ints)."""
+    rows = get_conn().execute(
+        "SELECT as_of_date, fund_value, benchmark_value FROM performance_history "
+        "WHERE portfolio_id = ? ORDER BY as_of_date",
+        (portfolio_id,),
+    ).fetchall()
+    if not rows:
+        return None
+    fd, fv, bd, bv = [], [], [], []
+    for d, f, b in rows:
+        ymd = int(d.replace("-", ""))
+        if f is not None:
+            fd.append(ymd)
+            fv.append(f)
+        if b is not None:
+            bd.append(ymd)
+            bv.append(b)
+    return {
+        "fund_dates": fd,
+        "fund_vals": fv,
+        "bm_dates": bd,
+        "bm_vals": bv,
+        "bm_name": bm_name or "Benchmark",
+    }
+
+
 def _bm_return_from_series(
     dates: list[int],
     vals: list[float],
@@ -1809,13 +1849,9 @@ def fund_growth_10k(
     raw: bool = Query(False),
 ) -> Any:
     fund = dict(_resolve_fund(ident))
-    utm_url = _utm_source_url(fund)
-    if not utm_url:
-        raise HTTPException(status_code=404, detail="No product page URL for this fund")
-
-    data = _fetch_perf_chart_data(fund["portfolio_id"], utm_url)
+    data = _perf_chart_from_db(fund["portfolio_id"], fund.get("benchmark_index"))
     if not data:
-        raise HTTPException(status_code=502, detail="Could not retrieve chart data from iShares")
+        raise HTTPException(status_code=404, detail="No performance history for this fund")
 
     fund_date_strs = [_ymd_int_to_str(d) for d in data["fund_dates"]]
     bm_date_strs = [_ymd_int_to_str(d) for d in data["bm_dates"]]
@@ -1903,8 +1939,7 @@ def fund_performance(
     pid = fund["portfolio_id"]
     today = _date.today()
 
-    utm_url = _utm_source_url(fund)
-    chart_data = _fetch_perf_chart_data(pid, utm_url) if utm_url else None
+    chart_data = _perf_chart_from_db(pid, fund.get("benchmark_index"))
 
     bm_dates = chart_data["bm_dates"] if chart_data else []
     bm_vals = chart_data["bm_vals"] if chart_data else []
@@ -2117,16 +2152,11 @@ def fund_premium_discount(
     raw: bool = Query(False),
 ) -> Any:
     fund = dict(_resolve_fund(ident))
-    pd_url = _pd_base_url(fund)
-    if not pd_url:
-        raise HTTPException(status_code=404, detail="No product page URL for this fund")
-
-    data = _fetch_premium_discount(fund["portfolio_id"], pd_url)
-    if not data:
-        raise HTTPException(status_code=502, detail="Could not retrieve premium/discount data from iShares")
-
-    date_strs = [_ymd_int_to_str(d) for d in data["dates"]]
-    vals = data["vals"]
+    history = _pd_history_from_db(fund["portfolio_id"])
+    if not history:
+        raise HTTPException(status_code=404, detail="No premium/discount history for this fund")
+    date_strs = [d for d, _ in history]
+    vals = [v for _, v in history]
 
     if raw:
         return [{"date": d, "premium_discount_pct": v} for d, v in zip(date_strs, vals) if v is not None]

@@ -233,5 +233,24 @@ CREATE TABLE fx_rates (
     eur_rate  DOUBLE      NOT NULL,
     PRIMARY KEY (rate_date, ccy)
 );
+
+-- Daily premium/discount to NAV (%), scraped from the iShares chart data.
+CREATE TABLE premium_discount_history (
+    portfolio_id          VARCHAR(64) NOT NULL,
+    as_of_date            VARCHAR(32) NOT NULL,
+    premium_discount_pct  DOUBLE,
+    PRIMARY KEY (portfolio_id, as_of_date),
+    KEY ix_pdh_date (as_of_date)
+);
+
+-- Fund + benchmark growth-of-$10,000 series from the product page chart.
+CREATE TABLE performance_history (
+    portfolio_id     VARCHAR(64) NOT NULL,
+    as_of_date       VARCHAR(32) NOT NULL,
+    fund_value       DOUBLE,
+    benchmark_value  DOUBLE,
+    PRIMARY KEY (portfolio_id, as_of_date),
+    KEY ix_perf_date (as_of_date)
+);
 -- Note: currency/report_currency widened to VARCHAR(32): some source rows carry
 -- dirty values (e.g. a date string up to 12 chars) in those fields.
